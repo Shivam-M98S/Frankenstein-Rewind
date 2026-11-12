@@ -1,0 +1,44 @@
+name: Publish verified alpha
+on:
+  push:
+    branches: [publish/alpha-1]
+    paths: ['.github/workflows/publish-verified.yml']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Receive verified build and publish the alpha
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          openssl req -x509 -newkey rsa:3072 -nodes -days 1 -subj /CN=artifact-transfer -keyout private.pem -out public.pem 2>/dev/null
+          gh api -X PUT "repos/$GH_REPO/contents/transfer/public.pem" -f branch=publish/alpha-1 -f message="Prepare temporary build transfer" -f content="$(base64 -w0 public.pem)" >/dev/null
+          for i in $(seq 1 150); do
+            if gh api "repos/$GH_REPO/contents/transfer/archive.cms?ref=publish%2Falpha-1" --jq '.content' > encoded 2>/dev/null; then break; fi
+            sleep 5
+          done
+          base64 -d encoded > envelope
+          url=$(openssl cms -decrypt -binary -inform DER -in envelope -recip public.pem -inkey private.pem)
+          echo "::add-mask::$url"
+          curl --silent --show-error --fail --location --proto '=https' "$url" -o build.zip
+          unset url
+          unzip -p build.zip Frankenstein-Rewind-S10.apk > Frankenstein-Rewind-S10.apk
+          echo '4e8f9ecbbe6cf77bfbfa771953122b31b2e6c9da471edbdfee677cbc14f3e37f  Frankenstein-Rewind-S10.apk' > SHA256SUMS
+          sha256sum -c SHA256SUMS
+          gh api "repos/$GH_REPO/contents/LICENSE?ref=main" --jq .content | base64 -d > LICENSE.txt
+          cat > notes.md <<'EOF'
+          Early ARM64 Android test build for the Galaxy S10. Download the APK below and open it on your phone.
+
+          Pin a playlist to Home, hold a song to queue it, or turn on Night Drive. Spotify playback requires the Spotify Android app and your own public developer client ID. Setup is in the repository README. Feedback from physical devices is welcome.
+
+          This product includes software developed by Aditya R. See the attached license.
+          EOF
+          gh release create v0.1.0-alpha.1 --target main --prerelease --draft --title 'Frankenstein Rewind · First Android alpha' --notes-file notes.md Frankenstein-Rewind-S10.apk SHA256SUMS LICENSE.txt
+          gh release edit v0.1.0-alpha.1 --draft=false
