@@ -1,0 +1,1032 @@
+diff --git a/android/app/build.gradle.kts b/android/app/build.gradle.kts
+index d9424f3..9e66065 100644
+--- a/android/app/build.gradle.kts
++++ b/android/app/build.gradle.kts
+@@ -68,8 +68,8 @@ android {
+         }
+         create("dev") {
+             dimension = "default"
+-            resValue("string", "app_name", "Classipod Dev")
+-            applicationIdSuffix = ".dev"
++            resValue("string", "app_name", "Frankenstein Rewind")
++            applicationIdSuffix = ".frankensteinrewind"
+             versionNameSuffix = "-dev"
+         }
+     }
+diff --git a/android/app/src/main/AndroidManifest.xml b/android/app/src/main/AndroidManifest.xml
+index 0830593..0429905 100644
+--- a/android/app/src/main/AndroidManifest.xml
++++ b/android/app/src/main/AndroidManifest.xml
+@@ -18,6 +18,15 @@
+         android:name="${applicationName}"
+         android:icon="@mipmap/ic_launcher"
+         android:enableOnBackInvokedCallback="true">
++        <activity android:name="com.spotify.sdk.android.auth.browser.RedirectUriReceiverActivity"
++            android:exported="true">
++            <intent-filter>
++                <action android:name="android.intent.action.VIEW" />
++                <category android:name="android.intent.category.DEFAULT" />
++                <category android:name="android.intent.category.BROWSABLE" />
++                <data android:scheme="frankensteinrewind" android:host="auth" />
++            </intent-filter>
++        </activity>
+         <activity
+             android:name="com.ryanheise.audioservice.AudioServiceActivity"
+             android:exported="true"
+@@ -74,6 +83,7 @@
+ 
+          In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
+     <queries>
++        <package android:name="com.spotify.music" />
+         <intent>
+             <action android:name="android.intent.action.PROCESS_TEXT" />
+             <data android:mimeType="text/plain" />
+diff --git a/android/build.gradle.kts b/android/build.gradle.kts
+index 1783c84..64c85f9 100644
+--- a/android/build.gradle.kts
++++ b/android/build.gradle.kts
+@@ -6,6 +6,9 @@ allprojects {
+     repositories {
+         google()
+         mavenCentral()
++        maven("https://jitpack.io") {
++            content { includeModule("com.github.stuhlmeier", "kotlin-events") }
++        }
+     }
+ }
+ 
+diff --git a/lib/core/navigation/routes.dart b/lib/core/navigation/routes.dart
+index d7d1493..128292d 100644
+--- a/lib/core/navigation/routes.dart
++++ b/lib/core/navigation/routes.dart
+@@ -1,3 +1,4 @@
++import 'package:classipod/features/rewind/rewind_screen.dart';
+ import 'package:classipod/core/constants/keys.dart';
+ import 'package:classipod/core/extensions/build_context_extensions.dart';
+ import 'package:classipod/core/models/music_metadata.dart';
+@@ -48,6 +49,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
+ import 'package:go_router/go_router.dart';
+ 
+ enum Routes {
++  rewind,
+   splash,
+   menu,
+   settings,
+@@ -89,6 +91,8 @@ enum Routes {
+ 
+   String title(BuildContext context) {
+     switch (this) {
++      case rewind:
++        return 'Frankenstein Rewind';
+       case splash:
+         return "";
+       case menu:
+@@ -308,6 +312,17 @@ final routerProvider = Provider(
+                       ),
+                     ],
+                   ),
++                  GoRoute(
++                    path: Routes.rewind.toString(),
++                    name: Routes.rewind.name,
++                    parentNavigatorKey: rootNavigatorKey,
++                    pageBuilder: (context, state) => CupertinoPage(
++                      key: state.pageKey,
++                      child: ScreenPageContent(
++                        child: RewindScreen(initialUri: state.extra as String?),
++                      ),
++                    ),
++                  ),
+                   GoRoute(
+                     path: Routes.nowPlaying.toString(),
+                     name: Routes.nowPlaying.name,
+diff --git a/lib/features/device/services/device_buttons_service_provider.dart b/lib/features/device/services/device_buttons_service_provider.dart
+index 3ab26ce..377900c 100644
+--- a/lib/features/device/services/device_buttons_service_provider.dart
++++ b/lib/features/device/services/device_buttons_service_provider.dart
+@@ -1,5 +1,9 @@
++import 'package:classipod/core/extensions/go_router_extensions.dart';
++
+ import 'dart:io';
+ 
++import 'package:classipod/core/navigation/routes.dart';
++
+ import 'package:classipod/core/services/audio_player_service.dart';
+ import 'package:classipod/core/services/click_sound_service.dart';
+ import 'package:classipod/features/device/models/device_action.dart';
+@@ -54,7 +58,9 @@ class DeviceButtonsServiceNotifier extends Notifier<DeviceAction?> {
+     await Future.wait([buttonPressVibrate(), clickWheelSound()]);
+     state = null;
+     state = DeviceAction.playPause;
+-    await ref.read(audioPlayerServiceProvider.notifier).togglePlayback();
++    if (ref.read(routerProvider).locationNamed != Routes.rewind.name) {
++      await ref.read(audioPlayerServiceProvider.notifier).togglePlayback();
++    }
+   }
+ 
+   void resetDeviceAction() {
+diff --git a/lib/features/device/widgets/device_frame.dart b/lib/features/device/widgets/device_frame.dart
+index 6c8efa1..62495d7 100644
+--- a/lib/features/device/widgets/device_frame.dart
++++ b/lib/features/device/widgets/device_frame.dart
+@@ -1,3 +1,4 @@
++import 'package:classipod/features/rewind/rewind_preferences.dart';
+ import 'package:classipod/core/constants/assets.dart';
+ import 'package:classipod/core/constants/keys.dart';
+ import 'package:classipod/features/device/widgets/device_controls.dart';
+@@ -19,99 +20,106 @@ class DeviceFrame extends ConsumerWidget {
+       settingsPreferencesControllerProvider.select((e) => e.deviceColor),
+     );
+     final deviceColorStyle = deviceColor.style;
+-    final solidFrameColor = deviceColorStyle.solidFrameColor;
++    return ValueListenableBuilder<bool>(
++      valueListenable: rewindNight,
++      builder: (context, night, _) {
++        final solidFrameColor = night
++            ? const Color(0xff28292c)
++            : deviceColorStyle.solidFrameColor;
+ 
+-    return DecoratedBox(
+-      decoration: BoxDecoration(
+-        color: solidFrameColor,
+-        image: solidFrameColor == null
+-            ? DecorationImage(
+-                image: const AssetImage(Assets.noiseImage),
+-                fit: BoxFit.cover,
+-                opacity: deviceColorStyle.noiseOpacity,
+-              )
+-            : null,
+-        gradient: solidFrameColor == null
+-            ? LinearGradient(
+-                begin: Alignment.topCenter,
+-                end: Alignment.bottomCenter,
+-                colors: deviceColorStyle.frameGradientColors,
+-              )
+-            : null,
+-      ),
+-      child: Stack(
+-        fit: StackFit.expand,
+-        clipBehavior: Clip.none,
+-        children: [
+-          Positioned(
+-            top: 0,
+-            child: SizedBox(
+-              height: 20,
+-              width: size.width,
+-              child: const DecoratedBox(
+-                decoration: BoxDecoration(
+-                  boxShadow: [BoxShadow(blurRadius: 100, spreadRadius: 1)],
+-                ),
+-              ),
+-            ),
++        return DecoratedBox(
++          decoration: BoxDecoration(
++            color: solidFrameColor,
++            image: solidFrameColor == null
++                ? DecorationImage(
++                    image: const AssetImage(Assets.noiseImage),
++                    fit: BoxFit.cover,
++                    opacity: deviceColorStyle.noiseOpacity,
++                  )
++                : null,
++            gradient: solidFrameColor == null
++                ? LinearGradient(
++                    begin: Alignment.topCenter,
++                    end: Alignment.bottomCenter,
++                    colors: deviceColorStyle.frameGradientColors,
++                  )
++                : null,
+           ),
+-          Positioned(
+-            bottom: 0,
+-            child: SizedBox(
+-              height: 20,
+-              width: size.width,
+-              child: const DecoratedBox(
+-                decoration: BoxDecoration(
+-                  boxShadow: [BoxShadow(blurRadius: 100, spreadRadius: 1)],
++          child: Stack(
++            fit: StackFit.expand,
++            clipBehavior: Clip.none,
++            children: [
++              Positioned(
++                top: 0,
++                child: SizedBox(
++                  height: 20,
++                  width: size.width,
++                  child: const DecoratedBox(
++                    decoration: BoxDecoration(
++                      boxShadow: [BoxShadow(blurRadius: 100, spreadRadius: 1)],
++                    ),
++                  ),
+                 ),
+               ),
+-            ),
+-          ),
+-          Positioned(
+-            left: 0,
+-            child: SizedBox(
+-              height: size.height,
+-              width: 20,
+-              child: const DecoratedBox(
+-                decoration: BoxDecoration(
+-                  boxShadow: [BoxShadow(blurRadius: 100, spreadRadius: 1)],
++              Positioned(
++                bottom: 0,
++                child: SizedBox(
++                  height: 20,
++                  width: size.width,
++                  child: const DecoratedBox(
++                    decoration: BoxDecoration(
++                      boxShadow: [BoxShadow(blurRadius: 100, spreadRadius: 1)],
++                    ),
++                  ),
+                 ),
+               ),
+-            ),
+-          ),
+-          Positioned(
+-            right: 0,
+-            child: SizedBox(
+-              height: size.height,
+-              width: 20,
+-              child: const DecoratedBox(
+-                decoration: BoxDecoration(
+-                  boxShadow: [BoxShadow(blurRadius: 100, spreadRadius: 1)],
++              Positioned(
++                left: 0,
++                child: SizedBox(
++                  height: size.height,
++                  width: 20,
++                  child: const DecoratedBox(
++                    decoration: BoxDecoration(
++                      boxShadow: [BoxShadow(blurRadius: 100, spreadRadius: 1)],
++                    ),
++                  ),
+                 ),
+               ),
+-            ),
+-          ),
+-          SafeArea(
+-            minimum: const EdgeInsets.fromLTRB(20, 30, 20, 20),
+-            child: Center(
+-              child: ConstrainedBox(
+-                constraints: const BoxConstraints(
+-                  maxHeight: 960,
+-                  maxWidth: 450,
++              Positioned(
++                right: 0,
++                child: SizedBox(
++                  height: size.height,
++                  width: 20,
++                  child: const DecoratedBox(
++                    decoration: BoxDecoration(
++                      boxShadow: [BoxShadow(blurRadius: 100, spreadRadius: 1)],
++                    ),
++                  ),
+                 ),
+-                child: Column(
+-                  children: [
+-                    DeviceScreen(key: deviceScreenGlobalKey, child: child),
+-                    const Spacer(flex: 2),
+-                    DeviceControls(key: deviceControlsGlobalKey),
+-                    const Spacer(),
+-                  ],
++              ),
++              SafeArea(
++                minimum: const EdgeInsets.fromLTRB(20, 30, 20, 20),
++                child: Center(
++                  child: ConstrainedBox(
++                    constraints: const BoxConstraints(
++                      maxHeight: 960,
++                      maxWidth: 450,
++                    ),
++                    child: Column(
++                      children: [
++                        DeviceScreen(key: deviceScreenGlobalKey, child: child),
++                        const Spacer(flex: 2),
++                        DeviceControls(key: deviceControlsGlobalKey),
++                        const Spacer(),
++                      ],
++                    ),
++                  ),
+                 ),
+               ),
+-            ),
++            ],
+           ),
+-        ],
+-      ),
++        );
++      },
+     );
+   }
+ }
+diff --git a/lib/features/menu/screens/main_menu_screen.dart b/lib/features/menu/screens/main_menu_screen.dart
+index f0dc83c..3f3052f 100644
+--- a/lib/features/menu/screens/main_menu_screen.dart
++++ b/lib/features/menu/screens/main_menu_screen.dart
+@@ -1,3 +1,5 @@
++import 'package:classipod/features/rewind/rewind_preferences.dart';
++
+ import 'dart:async';
+ 
+ import 'package:classipod/core/extensions/build_context_extensions.dart';
+@@ -13,14 +15,20 @@ import 'package:cupertino_ui/cupertino_ui.dart';
+ import 'package:flutter_riverpod/flutter_riverpod.dart';
+ import 'package:go_router/go_router.dart';
+ 
++import 'package:flutter/foundation.dart'
++    show TargetPlatform, defaultTargetPlatform, kIsWeb;
++
+ enum _MainMenuDisplayItems {
+   music,
+   settings,
+   shuffleSongs,
+-  nowPlaying;
++  nowPlaying,
++  spotify;
+ 
+   String title(BuildContext context) {
+     switch (this) {
++      case spotify:
++        return 'Spotify';
+       case music:
+         return context.localization.musicMenuScreenTitle;
+       case settings:
+@@ -48,7 +56,13 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
+   String get routeName => Routes.menu.name;
+ 
+   @override
+-  List<_MainMenuDisplayItems> get displayItems => _MainMenuDisplayItems.values;
++  List<Object> get displayItems => [
++    for (final item in _MainMenuDisplayItems.values)
++      if (item != _MainMenuDisplayItems.spotify ||
++          (!kIsWeb && defaultTargetPlatform == TargetPlatform.android))
++        item,
++    ...rewindPins.value.keys,
++  ];
+ 
+   @override
+   void onMenuButtonPressed() {
+@@ -57,11 +71,18 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
+ 
+   @override
+   Future<void> onSelectPressed() =>
+-      _navigateToScreen(_MainMenuDisplayItems.values[selectedDisplayItem]);
++      _navigateToScreen(displayItems[selectedDisplayItem]);
+ 
+-  Future<void> _navigateToScreen(_MainMenuDisplayItems menuItem) async {
++  Future<void> _navigateToScreen(Object menuItem) async {
+     setState(() => selectedDisplayItem = displayItems.indexOf(menuItem));
++    if (menuItem is String) {
++      await context.pushNamed(Routes.rewind.name, extra: menuItem);
++      return;
++    }
+     switch (menuItem) {
++      case _MainMenuDisplayItems.spotify:
++        await context.pushNamed(Routes.rewind.name);
++        break;
+       case _MainMenuDisplayItems.music:
+         context.goNamed(Routes.musicMenu.name);
+         break;
+@@ -91,6 +112,8 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
+   void _changeSplitScreenType() {
+     if (!mounted || context.router.locationNamed != routeName) return;
+     switch (displayItems[selectedDisplayItem]) {
++      case String():
++      case _MainMenuDisplayItems.spotify:
+       case _MainMenuDisplayItems.music:
+         ref.read(splitScreenControllerProvider.notifier).changeSplitScreenType =
+             SplitScreenType.albumArt;
+@@ -110,9 +133,26 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
+     }
+   }
+ 
++  void refreshPins() {
++    if (mounted)
++      setState(
++        () => selectedDisplayItem = selectedDisplayItem.clamp(
++          0,
++          displayItems.length - 1,
++        ),
++      );
++  }
++
++  @override
++  void dispose() {
++    rewindPins.removeListener(refreshPins);
++    super.dispose();
++  }
++
+   @override
+   void initState() {
+     super.initState();
++    rewindPins.addListener(refreshPins);
+     WidgetsBinding.instance.addPostFrameCallback((_) {
+       ref.read(tutorialControllerProvider.notifier).playMenuTutorial();
+     });
+@@ -149,7 +189,11 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
+                 itemBuilder: (context, index) {
+                   return DisplayListTile(
+                     key: ValueKey(displayItems[index]),
+-                    text: displayItems[index].title(context),
++                    text: switch (displayItems[index]) {
++                      final String uri => rewindPins.value[uri] ?? 'Playlist',
++                      final _MainMenuDisplayItems item => item.title(context),
++                      _ => '',
++                    },
+                     isSelected: selectedDisplayItem == index,
+                     onTap: () async => _navigateToScreen(displayItems[index]),
+                   );
+diff --git a/lib/features/rewind/rewind_preferences.dart b/lib/features/rewind/rewind_preferences.dart
+new file mode 100644
+index 0000000..ef5b233
+--- /dev/null
++++ b/lib/features/rewind/rewind_preferences.dart
+@@ -0,0 +1,30 @@
++import 'dart:convert';
++
++import 'package:flutter/foundation.dart';
++import 'package:shared_preferences/shared_preferences.dart';
++
++final rewindNight = ValueNotifier<bool>(false);
++final rewindPins = ValueNotifier<Map<String, String>>({});
++late SharedPreferences rewindPrefs;
++
++Future<void> loadRewindPreferences() async {
++  rewindPrefs = await SharedPreferences.getInstance();
++  rewindNight.value = rewindPrefs.getBool('rewind.night') ?? false;
++  final saved = rewindPrefs.getString('rewind.pins');
++  if (saved != null) {
++    rewindPins.value = Map<String, String>.from(jsonDecode(saved) as Map);
++  }
++}
++
++Future<void> savePin(String uri, String? name) async {
++  final next = {...rewindPins.value};
++  if (name == null) {
++    next.remove(uri);
++  } else {
++    next[uri] = name;
++  }
++  if (!await rewindPrefs.setString('rewind.pins', jsonEncode(next))) {
++    throw StateError('Could not save your shortcuts.');
++  }
++  rewindPins.value = next;
++}
+diff --git a/lib/features/rewind/rewind_screen.dart b/lib/features/rewind/rewind_screen.dart
+new file mode 100644
+index 0000000..b9867a8
+--- /dev/null
++++ b/lib/features/rewind/rewind_screen.dart
+@@ -0,0 +1,518 @@
++import 'dart:async';
++import 'dart:convert';
++import 'dart:typed_data';
++
++import 'package:classipod/core/navigation/routes.dart';
++import 'package:classipod/core/extensions/go_router_extensions.dart';
++import 'package:classipod/features/custom_screen_elements/custom_screen.dart';
++import 'package:classipod/features/device/models/device_action.dart';
++import 'package:classipod/features/rewind/rewind_preferences.dart';
++import 'package:flutter/cupertino.dart';
++import 'package:flutter_riverpod/flutter_riverpod.dart';
++import 'package:go_router/go_router.dart';
++import 'package:http/http.dart' as http;
++import 'package:spotify_sdk/spotify_sdk.dart';
++import 'package:url_launcher/url_launcher.dart';
++
++class RewindScreen extends ConsumerStatefulWidget {
++  const RewindScreen({super.key, this.initialUri});
++  final String? initialUri;
++  @override
++  ConsumerState<RewindScreen> createState() => _RewindState();
++}
++
++typedef Entry = ({String title, String id});
++
++class _RewindState extends ConsumerState<RewindScreen> with CustomScreen {
++  String section = 'Spotify';
++  String message = '';
++  String token = '';
++  String track = '';
++  String artist = '';
++  String trackUri = '';
++  Future<Uint8List?>? art;
++  bool paused = true;
++  bool busy = false;
++  bool connected = false;
++  String? nextPage;
++  List<Entry> library = [];
++  StreamSubscription<dynamic>? subscription;
++  final client = http.Client();
++  static const redirect = 'frankensteinrewind://auth';
++  static const rowHeight = 34.0;
++
++  @override
++  String get routeName => Routes.rewind.name;
++  @override
++  List<Entry> get displayItems {
++    if (section == 'Spotify') {
++      return [
++        for (final pin in rewindPins.value.entries)
++          (title: pin.value, id: pin.key),
++        (title: 'Liked Songs', id: 'liked'),
++        (title: 'Playlists', id: 'lists'),
++        (title: 'Now Playing', id: 'now'),
++        (
++          title: 'Night Drive - ${rewindNight.value ? "On" : "Off"}',
++          id: 'night',
++        ),
++        (title: 'Pin playlist link', id: 'pin-link'),
++        (title: 'Spotify setup', id: 'setup'),
++      ];
++    }
++    if (section == 'Now Playing') {
++      return [
++        (title: paused ? 'Resume' : 'Pause', id: 'toggle'),
++        if (trackUri.isNotEmpty) (title: 'Open in Spotify', id: 'open'),
++      ];
++    }
++    return [...library, if (nextPage != null) (title: 'Load more', id: 'more')];
++  }
++
++  @override
++  void initState() {
++    super.initState();
++    if (widget.initialUri != null) {
++      WidgetsBinding.instance.addPostFrameCallback(
++        (_) => run(() => play(widget.initialUri!)),
++      );
++    }
++  }
++
++  @override
++  void dispose() {
++    subscription?.cancel();
++    client.close();
++    super.dispose();
++  }
++
++  Future<void> run(Future<void> Function() action) async {
++    if (busy || !mounted) return;
++    setState(() {
++      busy = true;
++      message = '';
++    });
++    try {
++      await action();
++    } catch (e) {
++      if (mounted) setState(() => message = e.toString());
++    } finally {
++      if (mounted) setState(() => busy = false);
++    }
++  }
++
++  Future<String?> prompt(String title, String initial) async {
++    var value = initial;
++    return showCupertinoDialog<String>(
++      context: context,
++      builder: (c) => CupertinoAlertDialog(
++        title: Text(title),
++        content: CupertinoTextFormFieldRow(
++          initialValue: initial,
++          autocorrect: false,
++          onChanged: (s) => value = s.trim(),
++        ),
++        actions: [
++          CupertinoDialogAction(
++            onPressed: () => Navigator.pop(c),
++            child: const Text('Cancel'),
++          ),
++          CupertinoDialogAction(
++            onPressed: () => Navigator.pop(c, value),
++            child: const Text('Save'),
++          ),
++        ],
++      ),
++    );
++  }
++
++  Future<bool> setup() async {
++    final old = rewindPrefs.getString('rewind.client') ?? '';
++    final value = await prompt('Spotify public client ID', old);
++    if (value == null) return false;
++    if (!RegExp(r'^[a-fA-F0-9]{32}$').hasMatch(value))
++      throw StateError('Enter the 32-character public client ID.');
++    if (value != old) {
++      await subscription?.cancel();
++      if (connected) await SpotifySdk.disconnect();
++      connected = false;
++      token = '';
++    }
++    await rewindPrefs.setString('rewind.client', value);
++    return true;
++  }
++
++  Future<void> connect({bool libraryAccess = false}) async {
++    var id = rewindPrefs.getString('rewind.client') ?? '';
++    if (id.isEmpty) {
++      if (!await setup()) throw StateError('Spotify setup cancelled.');
++      id = rewindPrefs.getString('rewind.client')!;
++    }
++    if (libraryAccess && token.isEmpty) {
++      token = await SpotifySdk.getAccessToken(
++        clientId: id,
++        redirectUrl: redirect,
++        scope: 'app-remote-control,user-library-read,playlist-read-private,playlist-read-collaborative',
++      );
++    }
++    if (connected) return;
++    connected = await SpotifySdk.connectToSpotifyRemote(
++      clientId: id,
++      redirectUrl: redirect,
++    );
++    if (!connected) throw StateError('Open Spotify, sign in, then retry.');
++    await subscription?.cancel();
++    subscription = SpotifySdk.subscribePlayerState().listen(
++      (state) {
++        if (!mounted) return;
++        setState(() {
++          paused = state.isPaused;
++          track = state.track?.name ?? '';
++          artist = state.track?.artist.name ?? '';
++          final uri = state.track?.uri ?? '';
++          if (uri != trackUri) {
++            final image = state.track?.imageUri;
++            art = image == null ? null : SpotifySdk.getImage(imageUri: image);
++          }
++          trackUri = uri;
++        });
++      },
++      onError: (Object e) {
++        if (mounted)
++          setState(() {
++            connected = false;
++            message = e.toString();
++          });
++      },
++      onDone: () {
++        connected = false;
++      },
++    );
++  }
++
++  void page(String name) {
++    if (!mounted) return;
++    setState(() {
++      section = name;
++      selectedDisplayItem = 0;
++      message = '';
++    });
++    if (scrollController.hasClients) scrollController.jumpTo(0);
++  }
++
++  Future<void> play(String uri) async {
++    await connect();
++    await SpotifySdk.play(spotifyUri: uri);
++    page('Now Playing');
++  }
++
++  Future<void> fetchLibrary(String name, {bool more = false}) async {
++    await connect(libraryAccess: true);
++    final liked = name == 'Liked Songs';
++    final endpoint = Uri.parse(
++      more
++          ? nextPage!
++          : 'https://api.spotify.com/v1/me/${liked ? "tracks" : "playlists"}?limit=50',
++    );
++    if (endpoint.scheme != 'https' || endpoint.host != 'api.spotify.com')
++      throw StateError('Unexpected Spotify endpoint.');
++    final response = await client
++        .get(endpoint, headers: {'Authorization': 'Bearer $token'})
++        .timeout(const Duration(seconds: 20));
++    if (response.statusCode == 401) token = '';
++    if (response.statusCode != 200)
++      throw StateError(
++        'Spotify library request returned ${response.statusCode}. Check account access and retry.',
++      );
++    final data = jsonDecode(response.body) as Map;
++    final records = <Entry>[];
++    for (final row in data['items'] as List) {
++      if (row is! Map) continue;
++      final item = liked ? row['track'] : row;
++      if (item is! Map || item['name'] is! String || item['uri'] is! String)
++        continue;
++      if (!(item['uri'] as String).startsWith(
++        liked ? 'spotify:track:' : 'spotify:playlist:',
++      ))
++        continue;
++      records.add((title: item['name'] as String, id: item['uri'] as String));
++    }
++    if (!mounted) return;
++    if (!more) page(name);
++    setState(() {
++      library = more ? [...library, ...records] : records;
++      nextPage = data['next'] as String?;
++      if (library.isEmpty) message = 'No items found.';
++    });
++  }
++
++  Future<void> toggle() async {
++    await connect();
++    final state = await SpotifySdk.getPlayerState();
++    if (state == null) throw StateError('Spotify player is unavailable.');
++    if (state.isPaused) {
++      await SpotifySdk.resume();
++    } else {
++      await SpotifySdk.pause();
++    }
++  }
++
++  Future<void> choose(Entry entry) async {
++    switch (entry.id) {
++      case 'night':
++        final next = !rewindNight.value;
++        await rewindPrefs.setBool('rewind.night', next);
++        rewindNight.value = next;
++      case 'pin-link':
++        final link = await prompt('Spotify playlist link', '');
++        if (link == null || !mounted) return;
++        final pattern = RegExp(
++          r'^(?:spotify:playlist:|https://open\.spotify\.com/(?:intl-[^/]+/)?playlist/)([A-Za-z0-9]{22})(?:[/?#].*)?$',
++        );
++        final match = pattern.firstMatch(link.trim());
++        if (match == null)
++          throw StateError('Use a playlist link copied from Spotify.');
++        final name = await prompt('Home shortcut name', '');
++        if (name != null && name.trim().isNotEmpty)
++          await savePin('spotify:playlist:${match[1]}', name.trim());
++      case 'setup':
++        await setup();
++      case 'lists':
++        await fetchLibrary('Playlists');
++      case 'liked':
++        await fetchLibrary('Liked Songs');
++      case 'more':
++        await fetchLibrary(section, more: true);
++      case 'now':
++        await connect();
++        page('Now Playing');
++      case 'toggle':
++        await toggle();
++      case 'open':
++        final parts = trackUri.split(':');
++        if (parts.length == 3)
++          await launchUrl(
++            Uri.https('open.spotify.com', '/${parts[1]}/${parts[2]}'),
++            mode: LaunchMode.externalApplication,
++          );
++      default:
++        await play(entry.id);
++    }
++  }
++
++  Future<void> hold(Entry entry) async {
++    final pin = entry.id.startsWith('spotify:playlist:');
++    if (!pin && !entry.id.startsWith('spotify:track:')) return;
++    final saved = rewindPins.value.containsKey(entry.id);
++    final action = await showCupertinoModalPopup<String>(
++      context: context,
++      builder: (c) => CupertinoActionSheet(
++        title: Text(entry.title),
++        actions: [
++          CupertinoActionSheetAction(
++            onPressed: () => Navigator.pop(c, 'save'),
++            child: Text(
++              pin
++                  ? (saved ? 'Rename shortcut' : 'Pin to Home')
++                  : 'Add to queue',
++            ),
++          ),
++          if (pin && saved)
++            CupertinoActionSheetAction(
++              onPressed: () => Navigator.pop(c, 'remove'),
++              child: const Text('Unpin'),
++            ),
++        ],
++        cancelButton: CupertinoActionSheetAction(
++          onPressed: () => Navigator.pop(c),
++          child: const Text('Cancel'),
++        ),
++      ),
++    );
++    if (!mounted || action == null) return;
++    if (!pin) {
++      await connect();
++      await SpotifySdk.queue(spotifyUri: entry.id);
++      if (mounted) setState(() => message = 'Queued - ${entry.title}');
++    } else if (action == 'remove') {
++      await savePin(entry.id, null);
++      if (mounted) setState(() => selectedDisplayItem = 0);
++    } else {
++      final name = await prompt(
++        'Home shortcut name',
++        rewindPins.value[entry.id] ?? entry.title,
++      );
++      if (name != null && name.trim().isNotEmpty)
++        await savePin(entry.id, name.trim());
++    }
++  }
++
++  @override
++  void onMenuButtonPressed() {
++    if (busy) return;
++    if (section == 'Spotify') {
++      context.pop();
++    } else {
++      page('Spotify');
++    }
++  }
++
++  @override
++  void onSelectPressed() {
++    if (displayItems.isNotEmpty)
++      run(() => choose(displayItems[selectedDisplayItem]));
++  }
++
++  @override
++  void onSelectLongPress() {
++    if (displayItems.isNotEmpty)
++      run(() => hold(displayItems[selectedDisplayItem]));
++  }
++
++  @override
++  Future<void> seekForward() => run(() async {
++    await connect();
++    await SpotifySdk.skipNext();
++  });
++  @override
++  Future<void> seekBackward() => run(() async {
++    await connect();
++    await SpotifySdk.skipPrevious();
++  });
++  @override
++  Future<void> deviceControlHandler(dynamic old, DeviceAction? action) async {
++    if (action == DeviceAction.playPause &&
++        mounted &&
++        GoRouter.of(context).locationNamed == routeName &&
++        ModalRoute.of(context)?.isCurrent == true) {
++      await run(toggle);
++      return;
++    }
++    await super.deviceControlHandler(old, action);
++  }
++
++  void move(int delta) {
++    if (busy || displayItems.isEmpty) return;
++    setState(
++      () => selectedDisplayItem = (selectedDisplayItem + delta).clamp(
++        0,
++        displayItems.length - 1,
++      ),
++    );
++    if (scrollController.hasClients) {
++      final pos = scrollController.position;
++      final y = selectedDisplayItem * rowHeight;
++      if (y < pos.pixels ||
++          y + rowHeight > pos.pixels + pos.viewportDimension) {
++        scrollController.jumpTo(y.clamp(0, pos.maxScrollExtent));
++      }
++    }
++  }
++
++  @override
++  void scrollForward() => move(1);
++  @override
++  void scrollBackward() => move(-1);
++
++  @override
++  Widget build(BuildContext context) {
++    final night = rewindNight.value;
++    final ink = night ? const Color(0xffefb26e) : const Color(0xff182027);
++    final paper = night ? const Color(0xff151515) : const Color(0xfff8f9fa);
++    final rows = displayItems;
++    return ColoredBox(
++      color: paper,
++      child: DefaultTextStyle(
++        style: TextStyle(color: ink, fontSize: 15),
++        child: Column(
++          crossAxisAlignment: CrossAxisAlignment.stretch,
++          children: [
++            Padding(
++              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
++              child: Text(
++                section,
++                style: const TextStyle(fontWeight: FontWeight.bold),
++              ),
++            ),
++            if (section == 'Now Playing')
++              Padding(
++                padding: const EdgeInsets.symmetric(horizontal: 8),
++                child: Row(
++                  children: [
++                    if (art != null)
++                      FutureBuilder<Uint8List?>(
++                        future: art,
++                        builder: (context, snapshot) {
++                          final bytes = snapshot.data;
++                          return bytes == null
++                              ? const SizedBox.shrink()
++                              : Padding(
++                                  padding: const EdgeInsets.only(right: 8),
++                                  child: Image.memory(
++                                    bytes,
++                                    width: 48,
++                                    height: 48,
++                                    fit: BoxFit.contain,
++                                  ),
++                                );
++                        },
++                      ),
++                    Expanded(
++                      child: Text(
++                        [
++                          track.isEmpty ? 'No track selected' : track,
++                          artist,
++                        ].where((s) => s.isNotEmpty).join('\n'),
++                        maxLines: 3,
++                        overflow: TextOverflow.ellipsis,
++                        style: TextStyle(fontSize: night ? 20 : 17),
++                      ),
++                    ),
++                  ],
++                ),
++              ),
++            if (busy || message.isNotEmpty)
++              Padding(
++                padding: const EdgeInsets.symmetric(horizontal: 8),
++                child: Text(
++                  busy ? 'Connecting.' : message,
++                  maxLines: 3,
++                  overflow: TextOverflow.ellipsis,
++                ),
++              ),
++            Expanded(
++              child: ListView.builder(
++                controller: scrollController,
++                itemExtent: rowHeight,
++                itemCount: rows.length,
++                itemBuilder: (c, i) => GestureDetector(
++                  behavior: HitTestBehavior.opaque,
++                  onTap: () {
++                    if (!busy) {
++                      setState(() => selectedDisplayItem = i);
++                      run(() => choose(rows[i]));
++                    }
++                  },
++                  onLongPress: () => run(() => hold(rows[i])),
++                  child: Container(
++                    alignment: Alignment.centerLeft,
++                    padding: const EdgeInsets.symmetric(horizontal: 8),
++                    color: i == selectedDisplayItem ? ink : paper,
++                    child: Text(
++                      rows[i].title,
++                      maxLines: 1,
++                      overflow: TextOverflow.ellipsis,
++                      style: TextStyle(
++                        color: i == selectedDisplayItem ? paper : ink,
++                      ),
++                    ),
++                  ),
++                ),
++              ),
++            ),
++          ],
++        ),
++      ),
++    );
++  }
++}
+diff --git a/lib/main.dart b/lib/main.dart
+index 33a4760..6785f1e 100644
+--- a/lib/main.dart
++++ b/lib/main.dart
+@@ -1,3 +1,4 @@
++import 'package:classipod/features/rewind/rewind_preferences.dart';
+ import 'package:classipod/classipod_app.dart';
+ import 'package:classipod/core/constants/app_palette.dart';
+ import 'package:classipod/features/app_startup/screens/app_startup_screen.dart';
+@@ -5,8 +6,9 @@ import 'package:cupertino_ui/cupertino_ui.dart';
+ import 'package:flutter/services.dart';
+ import 'package:flutter_riverpod/flutter_riverpod.dart';
+ 
+-void main() {
++Future<void> main() async {
+   WidgetsFlutterBinding.ensureInitialized();
++  await loadRewindPreferences();
+   SystemChrome.setSystemUIOverlayStyle(
+     const SystemUiOverlayStyle(
+       systemNavigationBarColor: AppPalette.transparentColor,
+diff --git a/pubspec.yaml b/pubspec.yaml
+index 1c1a7ec..af20468 100644
+--- a/pubspec.yaml
++++ b/pubspec.yaml
+@@ -53,6 +53,7 @@ dependencies:
+   tutorial_coach_mark: ^1.3.4
+   universal_html: ^2.3.0
+   url_launcher: ^6.3.2
++  spotify_sdk: 4.3.4
+   vibration: ^3.2.1
+   vibration_web: ^1.6.8
+   volume_controller: ^3.7.1
