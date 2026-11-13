@@ -151,6 +151,20 @@ index d7c13b5..790e42d 100644
        localizationsDelegates: AppLocalizations.localizationsDelegates,
        supportedLocales: AppLocalizations.supportedLocales,
        debugShowCheckedModeBanner: false,
+diff --git a/lib/core/constants/constants.dart b/lib/core/constants/constants.dart
+index 4927429..462ebb4 100644
+--- a/lib/core/constants/constants.dart
++++ b/lib/core/constants/constants.dart
+@@ -13,9 +13,6 @@ class Constants {
+   static const String defaultNotificationAlbumArtImageUrl =
+       "'https://files.radio.co/humorous-skink/staging/default-artwork.png'";
+ 
+-  //If you are seeing this please consider donating to the below link😉
+-  static const String donationLinkUrl = "https://buymeacoffee.com/adeeteya";
+-
+   // Click Wheel Sensitivity Constants
+   static const double clickWheelVeryLowSensitivitySmallThreshold = 64;
+   static const double clickWheelVeryLowSensitivityBigThreshold = 800;
 diff --git a/lib/core/navigation/routes.dart b/lib/core/navigation/routes.dart
 index d7d1493..128292d 100644
 --- a/lib/core/navigation/routes.dart
@@ -272,6 +286,78 @@ index 4e52747..3d9c679 100644
    ref.listen(
      subsonicControllerProvider.select(
        (value) => (value.value?.enabled, value.value?.config?.id),
+diff --git a/lib/core/services/playback/playback_bootstrap.dart b/lib/core/services/playback/playback_bootstrap.dart
+index 82d3ce2..70a3a9b 100644
+--- a/lib/core/services/playback/playback_bootstrap.dart
++++ b/lib/core/services/playback/playback_bootstrap.dart
+@@ -4,8 +4,8 @@ Future<void> initializeMediaSession(AudioHandler handler) async {
+   await AudioService.init(
+     builder: () => handler,
+     config: const AudioServiceConfig(
+-      androidNotificationChannelId: 'classipod',
+-      androidNotificationChannelName: 'ClassiPod Audio playback',
++      androidNotificationChannelId: 'frankenstein-rewind',
++      androidNotificationChannelName: 'Frankenstein Rewind playback',
+       androidNotificationChannelDescription:
+           'Notification to control the currently playing music files',
+       androidNotificationOngoing: true,
+diff --git a/lib/core/widgets/display_list_tile.dart b/lib/core/widgets/display_list_tile.dart
+index 94ff1e2..afb6440 100644
+--- a/lib/core/widgets/display_list_tile.dart
++++ b/lib/core/widgets/display_list_tile.dart
+@@ -9,12 +9,14 @@ class DisplayListTile extends StatelessWidget {
+   final String text;
+   final bool isSelected;
+   final VoidCallback? onTap;
++  final VoidCallback? onLongPress;
+ 
+   const DisplayListTile({
+     super.key,
+     required this.text,
+     required this.isSelected,
+     this.onTap,
++    this.onLongPress,
+   });
+ 
+   @override
+@@ -27,6 +29,7 @@ class DisplayListTile extends StatelessWidget {
+ 
+     return GestureDetector(
+       onTap: onTap,
++      onLongPress: onLongPress,
+       child: SizedBox(
+         height: 30,
+         width: double.infinity,
+diff --git a/lib/features/custom_screen_elements/custom_screen.dart b/lib/features/custom_screen_elements/custom_screen.dart
+index aa884ff..aba8416 100644
+--- a/lib/features/custom_screen_elements/custom_screen.dart
++++ b/lib/features/custom_screen_elements/custom_screen.dart
+@@ -1,3 +1,6 @@
++import 'package:classipod/features/rewind/spotify_session.dart';
++import 'package:spotify_sdk/spotify_sdk.dart';
++
+ import 'dart:async';
+ 
+ import 'package:classipod/core/extensions/build_context_extensions.dart';
+@@ -99,10 +102,18 @@ mixin CustomScreen<T extends ConsumerStatefulWidget> on ConsumerState<T> {
+   }
+ 
+   Future<void> seekForward() async {
++    if (spotify.active && spotify.connected) {
++      await SpotifySdk.skipNext();
++      return;
++    }
+     await ref.read(audioPlayerServiceProvider.notifier).nextSong();
+   }
+ 
+   Future<void> seekBackward() async {
++    if (spotify.active && spotify.connected) {
++      await SpotifySdk.skipPrevious();
++      return;
++    }
+     await ref.read(audioPlayerServiceProvider.notifier).seekBackwards();
+   }
+ 
 diff --git a/lib/features/device/services/device_buttons_service_provider.dart b/lib/features/device/services/device_buttons_service_provider.dart
 index 3ab26ce..d644f80 100644
 --- a/lib/features/device/services/device_buttons_service_provider.dart
@@ -581,7 +667,7 @@ index c7f8c88..77d2ad7 100644
        ),
      );
 diff --git a/lib/features/menu/screens/main_menu_screen.dart b/lib/features/menu/screens/main_menu_screen.dart
-index f0dc83c..cae5174 100644
+index f0dc83c..feb011f 100644
 --- a/lib/features/menu/screens/main_menu_screen.dart
 +++ b/lib/features/menu/screens/main_menu_screen.dart
 @@ -1,3 +1,6 @@
@@ -619,7 +705,7 @@ index f0dc83c..cae5174 100644
        case music:
          return context.localization.musicMenuScreenTitle;
        case settings:
-@@ -48,7 +63,56 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
+@@ -48,7 +63,73 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
    String get routeName => Routes.menu.name;
  
    @override
@@ -632,6 +718,11 @@ index f0dc83c..cae5174 100644
 +          item,
 +      ...rewindPins.value.keys,
 +    ];
++    final hidden = rewindPrefs.getStringList('rewind.hidden') ?? [];
++    items.removeWhere(
++      (e) =>
++          hidden.contains(e.toString()) && e != _MainMenuDisplayItems.settings,
++    );
 +    final order = rewindPrefs.getStringList('rewind.menu') ?? [];
 +    return [
 +      ...order.expand((key) => items.where((e) => e.toString() == key)),
@@ -651,7 +742,9 @@ index f0dc83c..cae5174 100644
 +            (title: 'Move up', d: -1),
 +            (title: 'Move down', d: 1),
 +            (title: 'Pin to top', d: -999),
-+            (title: 'Restore default order', d: 0),
++            if (item != _MainMenuDisplayItems.settings)
++              (title: 'Hide from Home', d: 999),
++            (title: 'Restore default order and hidden items', d: 0),
 +          ])
 +            CupertinoActionSheetAction(
 +              onPressed: () => Navigator.pop(c, entry.d),
@@ -663,6 +756,12 @@ index f0dc83c..cae5174 100644
 +    if (offset == null || !mounted) return;
 +    if (offset == 0) {
 +      await rewindPrefs.remove('rewind.menu');
++      await rewindPrefs.remove('rewind.hidden');
++    } else if (offset == 999) {
++      await rewindPrefs.setStringList('rewind.hidden', [
++        ...?rewindPrefs.getStringList('rewind.hidden'),
++        item.toString(),
++      ]);
 +    } else {
 +      items.remove(item);
 +      items.insert((selectedDisplayItem + offset).clamp(0, items.length), item);
@@ -672,12 +771,16 @@ index f0dc83c..cae5174 100644
 +      );
 +    }
 +    if (mounted)
-+      setState(() => selectedDisplayItem = displayItems.indexOf(item));
++      setState(
++        () => selectedDisplayItem = displayItems
++            .indexOf(item)
++            .clamp(0, displayItems.length - 1),
++      );
 +  }
  
    @override
    void onMenuButtonPressed() {
-@@ -57,16 +121,33 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
+@@ -57,16 +138,33 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
  
    @override
    Future<void> onSelectPressed() =>
@@ -714,7 +817,7 @@ index f0dc83c..cae5174 100644
          break;
        case _MainMenuDisplayItems.settings:
          context.goNamed(Routes.settings.name);
-@@ -91,6 +172,10 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
+@@ -91,6 +189,10 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
    void _changeSplitScreenType() {
      if (!mounted || context.router.locationNamed != routeName) return;
      switch (displayItems[selectedDisplayItem]) {
@@ -725,7 +828,7 @@ index f0dc83c..cae5174 100644
        case _MainMenuDisplayItems.music:
          ref.read(splitScreenControllerProvider.notifier).changeSplitScreenType =
              SplitScreenType.albumArt;
-@@ -110,9 +195,26 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
+@@ -110,9 +212,26 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
      }
    }
  
@@ -752,7 +855,7 @@ index f0dc83c..cae5174 100644
      WidgetsBinding.instance.addPostFrameCallback((_) {
        ref.read(tutorialControllerProvider.notifier).playMenuTutorial();
      });
-@@ -149,7 +251,11 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
+@@ -149,8 +268,16 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
                  itemBuilder: (context, index) {
                    return DisplayListTile(
                      key: ValueKey(displayItems[index]),
@@ -763,8 +866,13 @@ index f0dc83c..cae5174 100644
 +                      _ => '',
 +                    },
                      isSelected: selectedDisplayItem == index,
++                    onLongPress: () {
++                      setState(() => selectedDisplayItem = index);
++                      onSelectLongPress();
++                    },
                      onTap: () async => _navigateToScreen(displayItems[index]),
                    );
+                 },
 diff --git a/lib/features/menu/widgets/now_playing_preview_widget.dart b/lib/features/menu/widgets/now_playing_preview_widget.dart
 index 435c1a8..4f5ec56 100644
 --- a/lib/features/menu/widgets/now_playing_preview_widget.dart
@@ -907,6 +1015,36 @@ index 23b2faf..406fb10 100644
                    maxLines: 1,
                    textAlign: TextAlign.center,
                    style: IpodTypography.title.copyWith(
+diff --git a/lib/features/music/album/providers/album_details_provider.dart b/lib/features/music/album/providers/album_details_provider.dart
+index abea8fe..303487a 100644
+--- a/lib/features/music/album/providers/album_details_provider.dart
++++ b/lib/features/music/album/providers/album_details_provider.dart
+@@ -1,3 +1,4 @@
++import 'package:classipod/features/rewind/rewind_preferences.dart';
+ import 'package:classipod/core/models/music_metadata.dart';
+ import 'package:classipod/core/providers/filtered_audio_files_provider.dart';
+ import 'package:classipod/core/utils/album_order.dart';
+@@ -9,7 +10,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
+ final albumDetailsProvider = Provider<List<AlbumModel>>((ref) {
+   final metadataList =
+       ref.watch(filteredAudioFilesProvider).value ?? <MusicMetadata>[];
+-  return buildAlbumDetails(metadataList);
++  final albums = buildAlbumDetails(metadataList);
++  final sort = rewindPrefs.getString('rewind.albumSort');
++  if (sort == 'Artist' || sort == 'Year') {
++    albums.sort((a, b) {
++      final group = sort == 'Year'
++          ? (a.albumSongs.first.year ?? 9999).compareTo(
++              b.albumSongs.first.year ?? 9999,
++            )
++          : compareNames(a.albumArtistName, b.albumArtistName);
++      return group == 0 ? compareNames(a.albumName, b.albumName) : group;
++    });
++  }
++  return albums;
+ });
+ 
+ final songAlbumArtworkProvider = Provider.autoDispose
 diff --git a/lib/features/music/songs/provider/songs_provider.dart b/lib/features/music/songs/provider/songs_provider.dart
 index b7756e6..3fb1a89 100644
 --- a/lib/features/music/songs/provider/songs_provider.dart
@@ -1064,10 +1202,10 @@ index 0000000..2658197
 +}
 diff --git a/lib/features/rewind/network_library.dart b/lib/features/rewind/network_library.dart
 new file mode 100644
-index 0000000..dbf9ef7
+index 0000000..0db458e
 --- /dev/null
 +++ b/lib/features/rewind/network_library.dart
-@@ -0,0 +1,188 @@
+@@ -0,0 +1,190 @@
 +import 'dart:convert';
 +import 'dart:io';
 +
@@ -1155,7 +1293,9 @@ index 0000000..dbf9ef7
 +  Future<File> cacheTrack(String path) async {
 +    return downloads.putIfAbsent(
 +      path,
-+      () => _cache(path).whenComplete(() => downloads.remove(path)),
++      () => _cache(path).whenComplete(() {
++        downloads.remove(path);
++      }),
 +    );
 +  }
 +
@@ -1296,10 +1436,10 @@ index 0000000..8d50463
 +final rewindAppearance = ValueNotifier<int>(0);
 diff --git a/lib/features/rewind/rewind_screen.dart b/lib/features/rewind/rewind_screen.dart
 new file mode 100644
-index 0000000..c6512a5
+index 0000000..1b641c8
 --- /dev/null
 +++ b/lib/features/rewind/rewind_screen.dart
-@@ -0,0 +1,683 @@
+@@ -0,0 +1,709 @@
 +import 'package:permission_handler/permission_handler.dart';
 +import 'package:classipod/core/extensions/build_context_extensions.dart';
 +import 'package:classipod/core/services/audio_player_service.dart';
@@ -1454,6 +1594,7 @@ index 0000000..c6512a5
 +    if (spotify.active && !spotify.paused) await SpotifySdk.pause();
 +    spotify.selectLocal();
 +    await service.setAudioSource(
++      preload: false,
 +      musicMetadataList: [
 +        for (var i = 0; i < entries.length; i++)
 +          networkLibrary.item(entries[i], i),
@@ -1497,7 +1638,7 @@ index 0000000..c6512a5
 +          initialValue: initial,
 +          obscureText: secret,
 +          autocorrect: false,
-+          onChanged: (s) => value = s.trim(),
++          onChanged: (s) => value = secret ? s : s.trim(),
 +        ),
 +        actions: [
 +          CupertinoDialogAction(
@@ -1938,6 +2079,31 @@ index 0000000..c6512a5
 +                  ],
 +                ),
 +              ),
++            if (section == 'Now Playing')
++              StreamBuilder<int>(
++                stream: paused
++                    ? null
++                    : Stream.periodic(const Duration(seconds: 1), (i) => i),
++                builder: (context, _) => Padding(
++                  padding: const EdgeInsets.symmetric(
++                    horizontal: 8,
++                    vertical: 3,
++                  ),
++                  child: Align(
++                    alignment: Alignment.centerLeft,
++                    child: FractionallySizedBox(
++                      widthFactor: spotify.progress,
++                      child: ColoredBox(
++                        color: ink,
++                        child: const SizedBox(
++                          height: 3,
++                          width: double.infinity,
++                        ),
++                      ),
++                    ),
++                  ),
++                ),
++              ),
 +            if (busy || message.isNotEmpty)
 +              Padding(
 +                padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -2067,10 +2233,10 @@ index 0000000..69e84fe
 +}
 diff --git a/lib/features/rewind/spotify_session.dart b/lib/features/rewind/spotify_session.dart
 new file mode 100644
-index 0000000..6094f3f
+index 0000000..371450d
 --- /dev/null
 +++ b/lib/features/rewind/spotify_session.dart
-@@ -0,0 +1,99 @@
+@@ -0,0 +1,112 @@
 +import 'dart:async';
 +import 'dart:typed_data';
 +
@@ -2084,6 +2250,16 @@ index 0000000..6094f3f
 +class SpotifySession extends ChangeNotifier {
 +  static const redirect = 'frankensteinrewind://auth';
 +  final storage = const FlutterSecureStorage();
++  int position = 0, duration = 0;
++  DateTime sampled = DateTime.now();
++  double get progress => duration <= 0
++      ? 0
++      : ((position +
++                    (paused
++                        ? 0
++                        : DateTime.now().difference(sampled).inMilliseconds)) /
++                duration)
++            .clamp(0.0, 1.0);
 +  String track = '', artist = '', uri = '';
 +  bool paused = true, active = false, connected = false;
 +  Future<Uint8List?>? art;
@@ -2134,6 +2310,9 @@ index 0000000..6094f3f
 +        uri = song?.uri ?? '';
 +        track = song?.name ?? '';
 +        artist = song?.artist.name ?? '';
++        position = state.playbackPosition;
++        duration = song?.duration ?? 0;
++        sampled = DateTime.now();
 +        paused = state.isPaused;
 +        if (!paused && uri.isNotEmpty) active = true;
 +        notifyListeners();
@@ -2198,33 +2377,38 @@ index f0cdc83..53026b8 100644
                ],
              ),
 diff --git a/lib/features/settings/screens/library_settings_screen.dart b/lib/features/settings/screens/library_settings_screen.dart
-index 1c59ee0..3155a48 100644
+index 1c59ee0..68aac84 100644
 --- a/lib/features/settings/screens/library_settings_screen.dart
 +++ b/lib/features/settings/screens/library_settings_screen.dart
-@@ -1,4 +1,6 @@
+@@ -1,4 +1,7 @@
++import 'package:classipod/features/music/album/providers/album_details_provider.dart';
 +import 'package:classipod/features/rewind/rewind_preferences.dart';
  import 'package:classipod/core/alerts/dialogs.dart';
 +import 'package:classipod/features/music/songs/provider/songs_provider.dart';
  import 'package:classipod/core/extensions/build_context_extensions.dart';
  import 'package:classipod/core/extensions/go_router_extensions.dart';
  import 'package:classipod/core/navigation/routes.dart';
-@@ -18,6 +20,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
+@@ -18,6 +21,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
  import 'package:go_router/go_router.dart';
  
  enum _LibrarySettingsItems {
 +  artwork,
++  albumSort,
 +  songSort,
 +  spotifySetup,
 +  smb,
    subsonic,
    configureSubsonic,
    hideLocalMusic,
-@@ -28,7 +34,12 @@ enum _LibrarySettingsItems {
+@@ -28,7 +36,15 @@ enum _LibrarySettingsItems {
    excludeDirectories;
  
    String title(BuildContext context) => switch (this) {
 -    subsonic => context.localization.subsonicTitle,
-+    artwork => 'Find missing album art',
++    artwork =>
++      "Download missing covers - ${rewindPrefs.getBool('rewind.coverLookup') == true ? 'On' : 'Off'}",
++    albumSort =>
++      "Sort albums - ${rewindPrefs.getString('rewind.albumSort') ?? 'Title'}",
 +    songSort =>
 +      'Sort songs � ${rewindPrefs.getString('rewind.songSort') ?? 'Title'}',
 +    spotifySetup => 'Spotify setup',
@@ -2233,27 +2417,40 @@ index 1c59ee0..3155a48 100644
      preventDuplicateTracks => context.localization.preventDuplicateTracksTitle,
      hideLocalMusic => context.localization.hideLocalMusicTitle,
      missingTracks => context.localization.missingTracksTitle,
-@@ -39,6 +50,7 @@ enum _LibrarySettingsItems {
+@@ -39,6 +55,11 @@ enum _LibrarySettingsItems {
    };
  
    SplitScreenType get preview => switch (this) {
-+    artwork || songSort || spotifySetup || smb => SplitScreenType.settings,
++    artwork ||
++    albumSort ||
++    songSort ||
++    spotifySetup ||
++    smb => SplitScreenType.settings,
      subsonic || configureSubsonic => SplitScreenType.subsonic,
      hideLocalMusic => SplitScreenType.hideLocalMusic,
      preventDuplicateTracks => SplitScreenType.preventDuplicateTracks,
-@@ -83,6 +95,35 @@ class _LibrarySettingsScreenState extends ConsumerState<LibrarySettingsScreen>
+@@ -83,6 +104,44 @@ class _LibrarySettingsScreenState extends ConsumerState<LibrarySettingsScreen>
      try {
        setState(() => selectedDisplayItem = displayItems.indexOf(item));
        switch (item) {
 +        case _LibrarySettingsItems.artwork:
-+          await rewindPrefs.setBool('rewind.coverLookup', true);
-+          try {
++          final enabled = !(rewindPrefs.getBool('rewind.coverLookup') ?? false);
++          await rewindPrefs.setBool('rewind.coverLookup', enabled);
++          if (enabled)
 +            await ref
 +                .read(settingsPreferencesControllerProvider.notifier)
-+                .rescanMusicFiles();
-+          } finally {
-+            await rewindPrefs.setBool('rewind.coverLookup', false);
-+          }
++                .refreshLibrary();
++          if (mounted) setState(() {});
++          break;
++        case _LibrarySettingsItems.albumSort:
++          const order = ['Title', 'Artist', 'Year'];
++          final cur = rewindPrefs.getString('rewind.albumSort') ?? 'Title';
++          await rewindPrefs.setString(
++            'rewind.albumSort',
++            order[(order.indexOf(cur) + 1) % order.length],
++          );
++          ref.invalidate(albumDetailsProvider);
++          if (mounted) setState(() {});
 +          break;
 +        case _LibrarySettingsItems.songSort:
 +          const order = ['Title', 'Artist', 'Album', 'Recently added'];
