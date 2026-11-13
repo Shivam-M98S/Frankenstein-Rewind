@@ -4,7 +4,23 @@ Frankenstein Rewind is a free click-wheel music player for Android by **Shivam-M
 
 **[Download the Android APK · 0.2.0 alpha 1 · 200 MB](https://github.com/Shivam-M98S/Frankenstein-Rewind/releases/download/v0.2.0-alpha.1/Frankenstein-Rewind-0.2.0-alpha.1.apk)** · [Read the changelog](https://github.com/Shivam-M98S/Frankenstein-Rewind/releases/tag/v0.2.0-alpha.1)
 
-## Your first listen
+## Music Home preview for Android
+
+[Download Rewind Preview · 0.2.1 alpha 1 · 200 MB](https://github.com/Shivam-M98S/Frankenstein-Rewind/releases/download/v0.2.1-alpha.1/Frankenstein-Rewind-Music-Preview.apk) · [Preview release notes and checksums](https://github.com/Shivam-M98S/Frankenstein-Rewind/releases/tag/v0.2.1-alpha.1)
+
+Install **Rewind Preview** alongside 0.2.0 to try the new menus. Open **Music → Playlists** to choose Spotify or device playlists. Open **Music → Cover Flow → Spotify albums** to browse your saved album covers with the wheel. Start a track and press Menu to see its cover on Home. **Now Playing** shows the artist, album, playback time and transport controls. Settings is the last item on Home.
+
+To use Spotify in this preview, add the following entries to your existing Spotify Developer app and save them. Keep the registrations for other builds you still use.
+
+| Spotify setting | Preview value |
+| --- | --- |
+| Android package | `io.github.shivamm98s.frankensteinrewind.preview` |
+| Package SHA-1 | `D3:C0:D0:1C:1C:79:87:E0:93:70:67:1F:6C:6F:EF:EC:0F:3B:39:4B` |
+| Redirect URI | `frankensteinrewindpreview://auth` |
+
+On the phone, open **Settings → Library → Spotify setup**, enter the same public client ID, and choose **Connect Spotify**. Allow Android music access for audio files stored on your phone. Spotify handles its own offline downloads.
+
+## Your first listen in 0.2.0
 
 Open the APK on your Android phone to install it. This test build installs alongside the first S10 alpha and keeps its own settings. For a quick first listen, open **Radio → Suriname**, pick a station, and long-press it to save it to Favorites.
 
