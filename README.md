@@ -43,6 +43,21 @@ flutter build apk --debug --flavor dev --target-platform android-arm64
 
 For a self-built APK, register your own signing certificate fingerprint with Spotify.
 
+## Library upgrade preview
+
+The 0.2 preview installs alongside the original S10 alpha. Look for the new package `io.github.shivamm98s.frankensteinrewind` in Android App info. The two installs keep separate settings.
+
+- **Settings → Library → Spotify setup** stores your public client ID on the device. Register the new Android package and the certificate SHA-1 supplied with your specific build. Keep the original redirect URI. Android may ask which installation should open the callback.
+- **Home Server** browses an SMB shared folder. Add its address and credentials in Library settings. Selected tracks are copied to the Android cache before playback. Music servers using Subsonic or Navidrome have their own setup in Library.
+- **Radio** opens a country directory, station search, favorites, and custom URLs. Long-press a station to toggle its favorite status. Individual broadcasters control their streams.
+- Long-press a Home item to move, pin or hide it. Restore default order from Settings’ Home row. Library settings include album and track sorting and optional online artwork lookup. Turning artwork lookup on submits album and artist names to Apple’s catalog.
+- **Experimental** includes a glass-style bezel, narrower side margins and an opt-in local-audio spectrum. The spectrum requires Android audio permission and uses the local player’s audio session.
+- **Now Playing** follows the active player. Liked Songs queues subsequent tracks from the loaded list. Use Load more before playing to extend it.
+
+## Support Rewind
+
+Rewind is free. You can support development by testing a build, starring the repository or reporting a playback issue. A payment link will appear here once the maintainer supplies a verified destination.
+
 ## Feedback
 
 [Report a test result](https://github.com/Shivam-M98S/Frankenstein-Rewind/issues) with your phone model, Android version, the action you tried, and what happened. If playback worked, tell us which controls you tested.
