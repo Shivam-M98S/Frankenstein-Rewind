@@ -69,7 +69,7 @@ index 0830593..9e7ab0a 100644
              <action android:name="android.intent.action.PROCESS_TEXT" />
              <data android:mimeType="text/plain" />
 diff --git a/android/app/src/main/kotlin/com/adeeteya/classipod/MainActivity.kt b/android/app/src/main/kotlin/com/adeeteya/classipod/MainActivity.kt
-index 67e9c63..1e8e22c 100644
+index 67e9c63..fe9e1fb 100644
 --- a/android/app/src/main/kotlin/com/adeeteya/classipod/MainActivity.kt
 +++ b/android/app/src/main/kotlin/com/adeeteya/classipod/MainActivity.kt
 @@ -1,5 +1,49 @@
@@ -94,7 +94,7 @@ index 67e9c63..1e8e22c 100644
 +        EventChannel(engine.dartExecutor.binaryMessenger, "frankensteinrewind/spectrum")
 +            .setStreamHandler(object : EventChannel.StreamHandler {
 +                override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
-+                    release()
++                    releaseVisualizer()
 +                    try {
 +                        val session = (arguments as Number).toInt()
 +                        require(session > 0)
@@ -116,13 +116,13 @@ index 67e9c63..1e8e22c 100644
 +                            }
 +                        }, minOf(12000, Visualizer.getMaxCaptureRate()), false, true)
 +                        effect.enabled = true
-+                    } catch (e: Exception) { release(); events.error("spectrum", e.message, null) }
++                    } catch (e: Exception) { releaseVisualizer(); events.error("spectrum", e.message, null) }
 +                }
-+                override fun onCancel(arguments: Any?) { release() }
++                override fun onCancel(arguments: Any?) { releaseVisualizer() }
 +            })
 +    }
-+    private fun release() { visualizer?.release(); visualizer = null }
-+    override fun onDestroy() { release(); super.onDestroy() }
++    private fun releaseVisualizer() { visualizer?.release(); visualizer = null }
++    override fun onDestroy() { releaseVisualizer(); super.onDestroy() }
 +}
 diff --git a/android/build.gradle.kts b/android/build.gradle.kts
 index 1783c84..64c85f9 100644
@@ -2531,51 +2531,62 @@ index 1c59ee0..68aac84 100644
            final controller = ref.read(subsonicControllerProvider.notifier);
            final enabled =
 diff --git a/lib/features/settings/screens/settings_preferences_screen.dart b/lib/features/settings/screens/settings_preferences_screen.dart
-index d0aee6e..ed13965 100644
+index d0aee6e..8bdd0d3 100644
 --- a/lib/features/settings/screens/settings_preferences_screen.dart
 +++ b/lib/features/settings/screens/settings_preferences_screen.dart
-@@ -34,6 +34,7 @@ enum _SettingsDisplayItems {
+@@ -1,4 +1,3 @@
+-import 'package:classipod/core/constants/constants.dart';
+ import 'package:classipod/core/extensions/build_context_extensions.dart';
+ import 'package:classipod/core/extensions/go_router_extensions.dart';
+ import 'package:classipod/core/navigation/routes.dart';
+@@ -13,7 +12,6 @@ import 'package:classipod/features/settings/widgets/settings_list_tile.dart';
+ import 'package:cupertino_ui/cupertino_ui.dart';
+ import 'package:flutter_riverpod/flutter_riverpod.dart';
+ import 'package:go_router/go_router.dart';
+-import 'package:url_launcher/url_launcher.dart';
+ 
+ enum _SettingsDisplayItems {
+   about,
+@@ -34,7 +32,7 @@ enum _SettingsDisplayItems {
    showAppTutorial,
    librarySettings,
    resetSettings,
-+  experimental,
-   donate;
+-  donate;
++  experimental;
  
    String title(BuildContext context) {
-@@ -74,8 +75,10 @@ enum _SettingsDisplayItems {
+     switch (this) {
+@@ -74,8 +72,8 @@ enum _SettingsDisplayItems {
          return context.localization.librarySettingsScreenTitle;
        case resetSettings:
          return context.localization.resetSettingsTitle;
+-      case donate:
+-        return context.localization.donateSettingTitle;
 +      case experimental:
 +        return 'Experimental';
-       case donate:
--        return context.localization.donateSettingTitle;
-+        return 'Support Rewind';
      }
    }
  }
-@@ -182,9 +185,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
+@@ -182,11 +180,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
              .read(settingsPreferencesControllerProvider.notifier)
              .resetSettings();
          break;
+-      case _SettingsDisplayItems.donate:
+-        await launchUrl(
+-          Uri.parse(Constants.donationLinkUrl),
+-          mode: LaunchMode.externalApplication,
+-        );
 +      case _SettingsDisplayItems.experimental:
 +        await context.pushNamed(Routes.rewind.name, extra: 'Experimental');
-+        break;
-       case _SettingsDisplayItems.donate:
-         await launchUrl(
--          Uri.parse(Constants.donationLinkUrl),
-+          Uri.parse(
-+            'https://github.com/Shivam-M98S/Frankenstein-Rewind#support-rewind',
-+          ),
-           mode: LaunchMode.externalApplication,
-         );
          break;
-@@ -313,9 +321,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
+     }
+   }
+@@ -313,9 +308,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
          ref.read(splitScreenControllerProvider.notifier).changeSplitScreenType =
              SplitScreenType.resetSettings;
          break;
+-      case _SettingsDisplayItems.donate:
 +      case _SettingsDisplayItems.experimental:
-       case _SettingsDisplayItems.donate:
          ref.read(splitScreenControllerProvider.notifier).changeSplitScreenType =
 -            SplitScreenType.donate;
 +            SplitScreenType.settings;
