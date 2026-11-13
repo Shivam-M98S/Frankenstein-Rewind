@@ -2,15 +2,15 @@
 
 A click-wheel music player for Android. Spin through your Spotify Liked Songs, hold the center button to queue a track, or pin a playlist to the home menu under a name of your choice. Night Drive switches the player to a graphite shell with amber text and album art.
 
-**[Download the Galaxy S10 test APK](https://github.com/Shivam-M98S/Frankenstein-Rewind/releases/download/v0.1.0-alpha.1/Frankenstein-Rewind-S10.apk)**
+**[Download Frankenstein Rewind 0.2.0 alpha 1 for Android](https://github.com/Shivam-M98S/Frankenstein-Rewind/releases/download/v0.2.0-alpha.1/Frankenstein-Rewind-0.2.0-alpha.1.apk)**
 
-This ARM64 debug build targets early testers. The build and APK signature have been verified. Playback on a physical Galaxy S10 is awaiting confirmation.
+This multi-architecture test APK installs alongside the original S10 alpha. The build and APK signature have been verified. Physical-device testing of this version is pending.
 
 ## Try it on Android
 
 1. Download and open the APK on your phone. Android may ask you to allow installation from the app that opened it.
-2. Open **Spotify  Night Drive** to try the theme.
-3. Open **Spotify  Pin playlist link**, paste a playlist link and give it a name. Return to the main menu to find your shortcut.
+2. Open **Spotify → Night Drive** to try the theme.
+3. Open **Spotify → Pin playlist link**, paste a playlist link and give it a name. Return to the main menu to find your shortcut.
 
 ## Connect Spotify
 
@@ -20,11 +20,11 @@ In the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard), r
 
 | Setting | Value |
 | --- | --- |
-| Android package | `com.adeeteya.classipod.frankensteinrewind` |
+| Android package | `io.github.shivamm98s.frankensteinrewind` |
 | Redirect URI | `frankensteinrewind://auth` |
-| Signing certificate SHA-1 | `9F:46:B5:3F:9E:06:31:4A:DF:4B:AE:95:AE:BF:5B:36:20:AA:ED:1B` |
+| Signing certificate SHA-1 | `1A:D7:A1:80:CE:BA:2F:FF:22:66:7D:22:29:D6:7B:C2:BC:34:44:80` |
 
-Open **Spotify  Spotify setup** in Rewind and paste your **public client ID**. Open **Liked Songs** to grant access and choose a track. Hold the center button on another track to add it to the queue.
+Open **Settings → Library → Spotify setup** in Rewind and paste your **public client ID**. Open **Liked Songs** to grant access and choose a track. Hold the center button on another track to add it to the queue.
 
 ## Build from source
 
