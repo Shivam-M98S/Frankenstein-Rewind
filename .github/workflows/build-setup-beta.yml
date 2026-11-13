@@ -1,0 +1,48 @@
+name: Build Rewind setup beta
+on:
+  push:
+    branches: [development/public-setup]
+    paths: ['.github/workflows/build-setup-beta.yml']
+permissions:
+  contents: read
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: adeeteya/Classipod
+          ref: 772a6d3533677bfa78f9251a40df8fa8ca3e6180
+          path: player
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.6'
+          cache: true
+      - name: Build universal preview for maintainer signing
+        working-directory: player
+        run: |
+          git apply ../Rewind.patch
+          sed -i 's/applicationId = "io.github.shivamm98s.frankensteinrewind"/applicationId = "io.github.shivamm98s.frankensteinrewind.preview"/;s/"Frankenstein Rewind")/"Rewind Preview")/g;s/signingConfig = signingConfigs.getByName("release")/signingConfig = null/' android/app/build.gradle.kts
+          sed -i 's/android:scheme="frankensteinrewind"/android:scheme="frankensteinrewindpreview"/g' android/app/src/main/AndroidManifest.xml
+          sed -i 's@frankensteinrewind://auth@frankensteinrewindpreview://auth@g' lib/features/rewind/spotify_session.dart
+          flutter pub get
+          flutter gen-l10n
+          dart run build_runner build --delete-conflicting-outputs
+          flutter build apk --release --flavor production --build-name=0.2.2 --build-number=30 --target-platform android-arm,android-arm64,android-x64
+          apk=$(find build/app/outputs -iname '*.apk' | head -1)
+          test -s "$apk"
+          zipalign=$(find "$ANDROID_HOME/build-tools" -name zipalign | sort -V | tail -1)
+          "$zipalign" -P 16 -f 4 "$apk" ../rewind-unsigned.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rewind-setup-signing-input
+          path: rewind-unsigned.apk
+          retention-days: 7
