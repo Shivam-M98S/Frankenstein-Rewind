@@ -1,0 +1,33 @@
+name: Check public setup
+on:
+  push:
+    branches: [development/public-setup]
+    paths: [Rewind.patch, .github/workflows/check-public-setup.yml]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: adeeteya/Classipod
+          ref: 772a6d3533677bfa78f9251a40df8fa8ca3e6180
+          path: player
+          persist-credentials: false
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.6'
+          cache: true
+      - name: Check setup changes and test Spotify library access
+        working-directory: player
+        run: |
+          git apply ../Rewind.patch
+          flutter pub get
+          flutter gen-l10n
+          dart run build_runner build --delete-conflicting-outputs
+          dart analyze --no-fatal-warnings lib/features/rewind/spotify_setup.dart lib/features/rewind/spotify_library.dart lib/features/rewind/spotify_session.dart lib/features/rewind/rewind_screen.dart lib/features/menu/screens/music_menu_screen.dart test/unit_tests/rewind/spotify_setup_test.dart
+          flutter test --no-pub --coverage --suppress-analytics test/unit_tests/rewind/spotify_setup_test.dart
