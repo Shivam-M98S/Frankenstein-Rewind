@@ -1,20 +1,30 @@
 # Frankenstein Rewind
 
-A click-wheel music player for Android. Spin through your Spotify Liked Songs, hold the center button to queue a track, or pin a playlist to the home menu under a name of your choice. Night Drive switches the player to a graphite shell with amber text and album art.
+Frankenstein Rewind is a free click-wheel music player for Android by **Shivam-M98S**. Spin through albums on your phone, pin a Spotify playlist to Home, or tune into a live station from Suriname. Use **Now Playing** on the main menu to get back to the track.
 
-**[Download Frankenstein Rewind 0.2.0 alpha 1 for Android](https://github.com/Shivam-M98S/Frankenstein-Rewind/releases/download/v0.2.0-alpha.1/Frankenstein-Rewind-0.2.0-alpha.1.apk)**
+**[Download the Android APK · 0.2.0 alpha 1 · 200 MB](https://github.com/Shivam-M98S/Frankenstein-Rewind/releases/download/v0.2.0-alpha.1/Frankenstein-Rewind-0.2.0-alpha.1.apk)** · [Read the changelog](https://github.com/Shivam-M98S/Frankenstein-Rewind/releases/tag/v0.2.0-alpha.1)
 
-This multi-architecture test APK installs alongside the original S10 alpha. The build and APK signature have been verified. Physical-device testing of this version is pending.
+## Your first listen
 
-## Try it on Android
+Open the APK on your Android phone to install it. This test build installs alongside the first S10 alpha and keeps its own settings. For a quick first listen, open **Radio → Suriname**, pick a station, and long-press it to save it to Favorites.
 
-1. Download and open the APK on your phone. Android may ask you to allow installation from the app that opened it.
-2. Open **Spotify → Night Drive** to try the theme.
-3. Open **Spotify → Pin playlist link**, paste a playlist link and give it a name. Return to the main menu to find your shortcut.
+| Where to go | What you can do |
+| --- | --- |
+| **Music** | Browse songs and albums stored on your phone. Choose your sort order under Library settings. |
+| **Spotify** | Browse Liked Songs and playlists. Hold the center button on a track to add it to the queue, or pin a playlist to Home under a name you choose. Spotify plays the audio through its Android app. |
+| **Home Server** | Browse an SMB shared folder on your PC or NAS. Rewind copies each selected track to the Android cache before playing it. Subsonic-compatible servers such as Navidrome have a separate setup option in Library settings. |
+| **Radio** | Browse by country, search for a station by name, or add a broadcaster’s stream URL. |
+
+## Make it yours
+
+- **Arrange Home.** Long-press an item to move it, pin it to the top, or hide it. You can restore the default layout from the same menu.
+- **Switch on Night Drive.** Open Spotify → Night Drive for a graphite shell and amber text. The Spotify section also follows the normal app theme.
+- **Try the experimental display options.** Settings → Experimental includes a glass-style bezel, narrower S10 edge margins, and a live spectrum for local tracks. The spectrum uses Android audio permission.
+- **Fill in missing artwork.** Rewind reads embedded art and checks the album folder for a cover image. Optional online lookup sends the artist and album names to Apple’s catalog and caches matching covers.
 
 ## Connect Spotify
 
-Spotify plays the audio through its Android app. Install Spotify and sign in on the same device. This alpha uses a public client ID supplied by the tester. For library access, use a Premium developer account and allowlist your tester account if it differs from the app owner.
+Install Spotify and sign in on the same device. This alpha uses a public client ID supplied by the tester. For library access, use a Premium developer account and allowlist your tester account if it differs from the app owner.
 
 In the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard), register an app for Android SDK and Web API access with these settings.
 
@@ -26,7 +36,12 @@ In the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard), r
 
 Open **Settings → Library → Spotify setup** in Rewind and paste your **public client ID**. Open **Liked Songs** to grant access and choose a track. Hold the center button on another track to add it to the queue.
 
-## Build from source
+## Testing and feedback
+
+The APK build and signing certificate have been verified. Physical-device testing of this version is open. Useful reports include the phone model, Android version, music source, and what happened. To check Spotify playback, start a Liked Song, open Now Playing from Home, then lock the phone and let the next track begin. [Report a test result](https://github.com/Shivam-M98S/Frankenstein-Rewind/issues)
+
+<details>
+<summary>Build from source</summary>
 
 The source changes for this alpha are in [Rewind.patch](Rewind.patch). From a checkout of this repository, use Flutter 3.47.6 and the Android SDK to build your own debug APK.
 
@@ -43,21 +58,8 @@ flutter build apk --debug --flavor dev --target-platform android-arm64
 
 For a self-built APK, register your own signing certificate fingerprint with Spotify.
 
-## Library upgrade preview
-
-The 0.2 preview installs alongside the original S10 alpha. Look for the new package `io.github.shivamm98s.frankensteinrewind` in Android App info. The two installs keep separate settings.
-
-- **Settings → Library → Spotify setup** stores your public client ID on the device. Register the new Android package and the certificate SHA-1 supplied with your specific build. Keep the original redirect URI. Android may ask which installation should open the callback.
-- **Home Server** browses an SMB shared folder. Add its address and credentials in Library settings. Selected tracks are copied to the Android cache before playback. Music servers using Subsonic or Navidrome have their own setup in Library.
-- **Radio** opens a country directory, station search, favorites, and custom URLs. Long-press a station to toggle its favorite status. Individual broadcasters control their streams.
-- Long-press a Home item to move, pin or hide it. Restore default order from Settings’ Home row. Library settings include album and track sorting and optional online artwork lookup. Turning artwork lookup on submits album and artist names to Apple’s catalog.
-- **Experimental** includes a glass-style bezel, narrower side margins and an opt-in local-audio spectrum. The spectrum requires Android audio permission and uses the local player’s audio session.
-- **Now Playing** follows the active player. Liked Songs queues subsequent tracks from the loaded list. Use Load more before playing to extend it.
-
-## Feedback
-
-[Report a test result](https://github.com/Shivam-M98S/Frankenstein-Rewind/issues) with your phone model, Android version, the action you tried, and what happened. If playback worked, tell us which controls you tested.
+</details>
 
 ## Credits
 
-Frankenstein Rewind builds on [ClassiPod](https://github.com/adeeteya/Classipod). This product includes software developed by Aditya R. See [LICENSE](LICENSE).
+Frankenstein Rewind builds on ClassiPod. This product includes software developed by Aditya R. [Upstream project](https://github.com/adeeteya/Classipod) · [License](LICENSE)
