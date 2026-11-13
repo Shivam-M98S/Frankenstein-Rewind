@@ -723,7 +723,7 @@ index c7f8c88..77d2ad7 100644
        ),
      );
 diff --git a/lib/features/menu/screens/main_menu_screen.dart b/lib/features/menu/screens/main_menu_screen.dart
-index f0dc83c..feb011f 100644
+index f0dc83c..956a72c 100644
 --- a/lib/features/menu/screens/main_menu_screen.dart
 +++ b/lib/features/menu/screens/main_menu_screen.dart
 @@ -1,3 +1,6 @@
@@ -733,7 +733,7 @@ index f0dc83c..feb011f 100644
  import 'dart:async';
  
  import 'package:classipod/core/extensions/build_context_extensions.dart';
-@@ -13,14 +16,26 @@ import 'package:cupertino_ui/cupertino_ui.dart';
+@@ -13,14 +16,23 @@ import 'package:cupertino_ui/cupertino_ui.dart';
  import 'package:flutter_riverpod/flutter_riverpod.dart';
  import 'package:go_router/go_router.dart';
  
@@ -742,13 +742,13 @@ index f0dc83c..feb011f 100644
 +
  enum _MainMenuDisplayItems {
    music,
-   settings,
+-  settings,
++  server,
++  radio,
++  nowPlaying,
    shuffleSongs,
 -  nowPlaying;
-+  nowPlaying,
-+  radio,
-+  server,
-+  spotify;
++  settings;
  
    String title(BuildContext context) {
      switch (this) {
@@ -756,22 +756,19 @@ index f0dc83c..feb011f 100644
 +        return 'Radio';
 +      case server:
 +        return 'Home Server';
-+      case spotify:
-+        return 'Spotify';
        case music:
          return context.localization.musicMenuScreenTitle;
        case settings:
-@@ -48,7 +63,73 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
+@@ -48,7 +60,76 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
    String get routeName => Routes.menu.name;
  
    @override
 -  List<_MainMenuDisplayItems> get displayItems => _MainMenuDisplayItems.values;
 +  List<Object> get displayItems {
 +    final items = <Object>[
-+      for (final item in _MainMenuDisplayItems.values)
-+        if (item != _MainMenuDisplayItems.spotify ||
-+            (!kIsWeb && defaultTargetPlatform == TargetPlatform.android))
-+          item,
++      ..._MainMenuDisplayItems.values.where(
++        (e) => e != _MainMenuDisplayItems.settings,
++      ),
 +      ...rewindPins.value.keys,
 +    ];
 +    final hidden = rewindPrefs.getStringList('rewind.hidden') ?? [];
@@ -783,6 +780,7 @@ index f0dc83c..feb011f 100644
 +    return [
 +      ...order.expand((key) => items.where((e) => e.toString() == key)),
 +      ...items.where((e) => !order.contains(e.toString())),
++      _MainMenuDisplayItems.settings,
 +    ];
 +  }
 +
@@ -795,9 +793,12 @@ index f0dc83c..feb011f 100644
 +      builder: (c) => CupertinoActionSheet(
 +        actions: [
 +          for (final entry in [
-+            (title: 'Move up', d: -1),
-+            (title: 'Move down', d: 1),
-+            (title: 'Pin to top', d: -999),
++            if (item != _MainMenuDisplayItems.settings)
++              (title: 'Move up', d: -1),
++            if (item != _MainMenuDisplayItems.settings)
++              (title: 'Move down', d: 1),
++            if (item != _MainMenuDisplayItems.settings)
++              (title: 'Pin to top', d: -999),
 +            if (item != _MainMenuDisplayItems.settings)
 +              (title: 'Hide from Home', d: 999),
 +            (title: 'Restore default order and hidden items', d: 0),
@@ -836,7 +837,7 @@ index f0dc83c..feb011f 100644
  
    @override
    void onMenuButtonPressed() {
-@@ -57,16 +138,33 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
+@@ -57,16 +138,30 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
  
    @override
    Future<void> onSelectPressed() =>
@@ -857,9 +858,6 @@ index f0dc83c..feb011f 100644
 +      case _MainMenuDisplayItems.server:
 +        await context.pushNamed(Routes.rewind.name, extra: 'Home Server');
 +        break;
-+      case _MainMenuDisplayItems.spotify:
-+        await context.pushNamed(Routes.rewind.name);
-+        break;
        case _MainMenuDisplayItems.music:
          context.goNamed(Routes.musicMenu.name);
          break;
@@ -873,18 +871,17 @@ index f0dc83c..feb011f 100644
          break;
        case _MainMenuDisplayItems.settings:
          context.goNamed(Routes.settings.name);
-@@ -91,6 +189,10 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
+@@ -91,6 +186,9 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
    void _changeSplitScreenType() {
      if (!mounted || context.router.locationNamed != routeName) return;
      switch (displayItems[selectedDisplayItem]) {
 +      case _MainMenuDisplayItems.radio:
 +      case _MainMenuDisplayItems.server:
 +      case String():
-+      case _MainMenuDisplayItems.spotify:
        case _MainMenuDisplayItems.music:
          ref.read(splitScreenControllerProvider.notifier).changeSplitScreenType =
              SplitScreenType.albumArt;
-@@ -110,9 +212,26 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
+@@ -110,9 +208,26 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
      }
    }
  
@@ -911,7 +908,7 @@ index f0dc83c..feb011f 100644
      WidgetsBinding.instance.addPostFrameCallback((_) {
        ref.read(tutorialControllerProvider.notifier).playMenuTutorial();
      });
-@@ -149,8 +268,16 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
+@@ -149,8 +264,16 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
                  itemBuilder: (context, index) {
                    return DisplayListTile(
                      key: ValueKey(displayItems[index]),
@@ -929,16 +926,124 @@ index f0dc83c..feb011f 100644
                      onTap: () async => _navigateToScreen(displayItems[index]),
                    );
                  },
+diff --git a/lib/features/menu/screens/music_menu_screen.dart b/lib/features/menu/screens/music_menu_screen.dart
+index bdf0b28..8b548ad 100644
+--- a/lib/features/menu/screens/music_menu_screen.dart
++++ b/lib/features/menu/screens/music_menu_screen.dart
+@@ -1,3 +1,7 @@
++import 'package:flutter/foundation.dart'
++    show defaultTargetPlatform, TargetPlatform, kIsWeb;
++import 'package:classipod/features/rewind/rewind_preferences.dart';
++
+ import 'dart:async';
+ 
+ import 'package:classipod/core/extensions/build_context_extensions.dart';
+@@ -9,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
+ import 'package:go_router/go_router.dart';
+ 
+ enum _MusicListDisplayItems {
++  spotify,
+   coverFlow,
+   playlists,
+   artists,
+@@ -19,6 +24,8 @@ enum _MusicListDisplayItems {
+ 
+   String title(BuildContext context) {
+     switch (this) {
++      case spotify:
++        return 'Spotify';
+       case coverFlow:
+         return context.localization.coverFlowScreenTitle;
+       case playlists:
+@@ -50,12 +57,16 @@ class _MusicMenuScreenState extends ConsumerState<MusicMenuScreen>
+   String get routeName => Routes.musicMenu.name;
+ 
+   @override
+-  List<_MusicListDisplayItems> get displayItems =>
+-      _MusicListDisplayItems.values;
++  List<_MusicListDisplayItems> get displayItems => [
++    for (final item in _MusicListDisplayItems.values)
++      if (item != _MusicListDisplayItems.spotify ||
++          (!kIsWeb && defaultTargetPlatform == TargetPlatform.android))
++        item,
++  ];
+ 
+   @override
+   Future<void> onSelectPressed() =>
+-      _navigateToScreen(_MusicListDisplayItems.values[selectedDisplayItem]);
++      _navigateToScreen(displayItems[selectedDisplayItem]);
+ 
+   Future<void> _navigateToScreen(
+     _MusicListDisplayItems musicDisplayItem,
+@@ -64,7 +75,14 @@ class _MusicMenuScreenState extends ConsumerState<MusicMenuScreen>
+       () => selectedDisplayItem = displayItems.indexOf(musicDisplayItem),
+     );
+     switch (musicDisplayItem) {
++      case _MusicListDisplayItems.spotify:
++        await context.pushNamed(Routes.rewind.name);
++        break;
+       case _MusicListDisplayItems.coverFlow:
++        if ((rewindPrefs.getString('rewind.client') ?? '').isNotEmpty) {
++          await context.pushNamed(Routes.rewind.name, extra: 'Album sources');
++          break;
++        }
+         unawaited(ref.read(splitScreenViewControllerProvider).closeSplitView());
+         await context.pushNamed(
+           Routes.coverFlow.name,
+@@ -73,6 +91,13 @@ class _MusicMenuScreenState extends ConsumerState<MusicMenuScreen>
+         unawaited(ref.read(splitScreenViewControllerProvider).openSplitView());
+         break;
+       case _MusicListDisplayItems.playlists:
++        if ((rewindPrefs.getString('rewind.client') ?? '').isNotEmpty) {
++          await context.pushNamed(
++            Routes.rewind.name,
++            extra: 'Playlist sources',
++          );
++          break;
++        }
+         context.goNamed(Routes.playlists.name);
+         break;
+       case _MusicListDisplayItems.artists:
+diff --git a/lib/features/menu/widgets/animated_album_art_scroller.dart b/lib/features/menu/widgets/animated_album_art_scroller.dart
+index 579c241..b2e78f0 100644
+--- a/lib/features/menu/widgets/animated_album_art_scroller.dart
++++ b/lib/features/menu/widgets/animated_album_art_scroller.dart
+@@ -1,3 +1,6 @@
++import 'package:classipod/features/rewind/spotify_art.dart';
++import 'package:classipod/features/rewind/spotify_session.dart';
++
+ import 'dart:async';
+ import 'dart:math';
+ 
+@@ -129,6 +132,17 @@ class _AnimatedAlbumArtScrollerState
+ 
+   @override
+   Widget build(BuildContext context) {
++    return ListenableBuilder(
++      listenable: spotify,
++      builder: (context, _) {
++        if (spotify.active && spotify.track.isNotEmpty)
++          return const SpotifyArtwork(caption: true);
++        return localArt(context);
++      },
++    );
++  }
++
++  Widget localArt(BuildContext context) {
+     if (_isEmptyState) {
+       return EmptyStateWidget(
+         emptyDescription: context.localization.noMusicFilesFound,
 diff --git a/lib/features/menu/widgets/now_playing_preview_widget.dart b/lib/features/menu/widgets/now_playing_preview_widget.dart
-index 435c1a8..4f5ec56 100644
+index 435c1a8..daf1b1e 100644
 --- a/lib/features/menu/widgets/now_playing_preview_widget.dart
 +++ b/lib/features/menu/widgets/now_playing_preview_widget.dart
-@@ -1,3 +1,4 @@
+@@ -1,3 +1,5 @@
++import 'package:classipod/features/rewind/spotify_art.dart';
 +import 'package:classipod/features/rewind/spotify_session.dart';
  import 'package:classipod/core/constants/app_palette.dart';
  import 'package:classipod/core/extensions/build_context_extensions.dart';
  import 'package:classipod/core/theme/ipod_gradients.dart';
-@@ -17,57 +18,72 @@ class NowPlayingPreviewWidget extends ConsumerWidget {
+@@ -17,57 +19,64 @@ class NowPlayingPreviewWidget extends ConsumerWidget {
        nowPlayingDetailsProvider.select((e) => e.currentMetadata),
      );
  
@@ -958,17 +1063,7 @@ index 435c1a8..4f5ec56 100644
 -                CupertinoIcons.music_note_2,
 -                size: 65,
 -                color: AppPalette.previewForeground,
-+    return ListenableBuilder(
-+      listenable: spotify,
-+      builder: (context, _) {
-+        if (spotify.active && spotify.track.isNotEmpty)
-+          return Center(
-+            child: Padding(
-+              padding: const EdgeInsets.all(8),
-+              child: Text(
-+                [spotify.track, spotify.artist].join('\n'),
-+                textAlign: TextAlign.center,
-               ),
+-              ),
 -              const Spacer(),
 -              if (currentMetadata != null) ...[
 -                MarqueeText(
@@ -976,8 +1071,20 @@ index 435c1a8..4f5ec56 100644
 -                  key: ValueKey(currentMetadata.identity),
 -                  textAlign: TextAlign.center,
 -                  style: IpodTypography.menu.copyWith(
-+            ),
-+          );
+-                    color: AppPalette.previewForeground,
+-                  ),
+-                ),
+-                const SizedBox(height: 5),
+-                Text(
+-                  currentMetadata.getTrackArtistNames ??
+-                      context.localization.unknownArtist,
+-                  maxLines: 1,
+-                  style: IpodTypography.metadata.copyWith(
++    return ListenableBuilder(
++      listenable: spotify,
++      builder: (context, _) {
++        if (spotify.active && spotify.track.isNotEmpty)
++          return const SpotifyArtwork(caption: true);
 +        return SizedBox(
 +          key: const ValueKey(SplitScreenType.nowPlaying),
 +          width: double.infinity,
@@ -994,17 +1101,8 @@ index 435c1a8..4f5ec56 100644
 +                    CupertinoIcons.music_note_2,
 +                    size: 65,
                      color: AppPalette.previewForeground,
-                   ),
--                ),
--                const SizedBox(height: 5),
--                Text(
--                  currentMetadata.getTrackArtistNames ??
--                      context.localization.unknownArtist,
--                  maxLines: 1,
--                  style: IpodTypography.metadata.copyWith(
--                    color: AppPalette.previewForeground,
 -                    overflow: TextOverflow.ellipsis,
--                  ),
+                   ),
 -                ),
 -                const SizedBox(height: 5),
 -                Text(
@@ -1101,6 +1199,55 @@ index abea8fe..303487a 100644
  });
  
  final songAlbumArtworkProvider = Provider.autoDispose
+diff --git a/lib/features/music/cover_flow/screens/cover_flow_screen.dart b/lib/features/music/cover_flow/screens/cover_flow_screen.dart
+index 5883ca5..a485777 100644
+--- a/lib/features/music/cover_flow/screens/cover_flow_screen.dart
++++ b/lib/features/music/cover_flow/screens/cover_flow_screen.dart
+@@ -86,6 +86,7 @@ class _CoverFlowScreenState extends ConsumerState<_CoverFlowView>
+       _chooseAlbum(_wheelMotion.target ?? selectedDisplayItem);
+ 
+   void _chooseAlbum(int index) {
++    if (index < 0 || index >= displayItems.length) return;
+     final albumDetail = ref.read(albumDetailsProvider).elementAt(index);
+     unawaited(
+       context.pushNamed(Routes.coverFlowSelection.name, extra: albumDetail),
+@@ -102,7 +103,7 @@ class _CoverFlowScreenState extends ConsumerState<_CoverFlowView>
+           children: [
+             Expanded(
+               child: EmptyStateWidget(
+-                emptyDescription: context.localization.noMusicFilesFound,
++                emptyDescription: "No albums on this phone. Allow Music and audio access, then refresh your library in Settings.",
+               ),
+             ),
+           ],
+diff --git a/lib/features/music/playlist/screens/playlists_screen.dart b/lib/features/music/playlist/screens/playlists_screen.dart
+index 4b3611a..1b1185c 100644
+--- a/lib/features/music/playlist/screens/playlists_screen.dart
++++ b/lib/features/music/playlist/screens/playlists_screen.dart
+@@ -30,6 +30,7 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen>
+       _navigateToPlaylistSongsScreen(selectedDisplayItem);
+ 
+   Future<void> _navigateToPlaylistSongsScreen(int displayIndex) async {
++    if (displayIndex < 0 || displayIndex >= displayItems.length) return;
+     setState(() => selectedDisplayItem = displayIndex);
+     context.goNamed(
+       Routes.playlistSongs.name,
+@@ -39,6 +40,15 @@ class _PlaylistsScreenState extends ConsumerState<PlaylistsScreen>
+ 
+   @override
+   Widget build(BuildContext context) {
++    if (displayItems.isEmpty)
++      return const Center(
++        child: Padding(
++          padding: EdgeInsets.all(12),
++          child: Text(
++            'No local playlists yet. Hold a song in Music to open its playlist options.',
++          ),
++        ),
++      );
+     return CupertinoPageScaffold(
+       child: Column(
+         children: [
 diff --git a/lib/features/music/songs/provider/songs_provider.dart b/lib/features/music/songs/provider/songs_provider.dart
 index b7756e6..3fb1a89 100644
 --- a/lib/features/music/songs/provider/songs_provider.dart
@@ -1492,10 +1639,11 @@ index 0000000..8d50463
 +final rewindAppearance = ValueNotifier<int>(0);
 diff --git a/lib/features/rewind/rewind_screen.dart b/lib/features/rewind/rewind_screen.dart
 new file mode 100644
-index 0000000..1b641c8
+index 0000000..96083d9
 --- /dev/null
 +++ b/lib/features/rewind/rewind_screen.dart
-@@ -0,0 +1,709 @@
+@@ -0,0 +1,831 @@
++import 'package:classipod/features/rewind/spotify_art.dart';
 +import 'package:permission_handler/permission_handler.dart';
 +import 'package:classipod/core/extensions/build_context_extensions.dart';
 +import 'package:classipod/core/services/audio_player_service.dart';
@@ -1536,6 +1684,8 @@ index 0000000..1b641c8
 +  bool get paused => spotify.paused;
 +  Future<Uint8List?>? get art => spotify.art;
 +  bool busy = false;
++  final albumImages = <String, String>{};
++  final carousel = PageController(viewportFraction: 0.72);
 +  final folders = <String>[];
 +  String? nextPage;
 +  List<Entry> library = [];
@@ -1548,6 +1698,16 @@ index 0000000..1b641c8
 +  String get routeName => Routes.rewind.name;
 +  @override
 +  List<Entry> get displayItems {
++    if (section == 'Album sources')
++      return [
++        (title: 'Spotify albums', id: 'albums'),
++        (title: 'Device library', id: 'local-albums'),
++      ];
++    if (section == 'Playlist sources')
++      return [
++        (title: 'Spotify playlists', id: 'lists'),
++        (title: 'Device playlists', id: 'local-lists'),
++      ];
 +    if (section == 'Experimental')
 +      return [
 +        for (final key in ['Liquid Glass', 'S10 Edge', 'Local spectrum'])
@@ -1597,6 +1757,9 @@ index 0000000..1b641c8
 +    if (section == 'Now Playing') {
 +      return [
 +        (title: paused ? 'Resume' : 'Pause', id: 'toggle'),
++        (title: 'Next track', id: 'skip'),
++        (title: 'Previous track', id: 'previous'),
++        (title: 'Browse playlists', id: 'lists'),
 +        if (trackUri.isNotEmpty) (title: 'Open in Spotify', id: 'open'),
 +      ];
 +    }
@@ -1627,6 +1790,7 @@ index 0000000..1b641c8
 +
 +  @override
 +  void dispose() {
++    carousel.dispose();
 +    spotify.removeListener(refresh);
 +    client.close();
 +    super.dispose();
@@ -1753,10 +1917,15 @@ index 0000000..1b641c8
 +      throw StateError('Open Settings  Library  Spotify setup.');
 +    var token = await spotify.token(clientId);
 +    final liked = name == 'Liked Songs';
++    final albums = name == 'Spotify albums';
 +    final endpoint = Uri.parse(
 +      more
 +          ? nextPage!
-+          : 'https://api.spotify.com/v1/me/${liked ? "tracks" : "playlists"}?limit=50',
++          : 'https://api.spotify.com/v1/me/${liked
++                ? "tracks"
++                : albums
++                ? "albums"
++                : "playlists"}?limit=50',
 +    );
 +    if (endpoint.scheme != 'https' || endpoint.host != 'api.spotify.com')
 +      throw StateError('Unexpected Spotify endpoint.');
@@ -1777,13 +1946,31 @@ index 0000000..1b641c8
 +    final records = <Entry>[];
 +    for (final row in data['items'] as List) {
 +      if (row is! Map) continue;
-+      final item = liked ? row['track'] : row;
++      final item = liked
++          ? row['track']
++          : albums
++          ? row['album']
++          : row;
 +      if (item is! Map || item['name'] is! String || item['uri'] is! String)
 +        continue;
 +      if (!(item['uri'] as String).startsWith(
-+        liked ? 'spotify:track:' : 'spotify:playlist:',
++        liked
++            ? 'spotify:track:'
++            : albums
++            ? 'spotify:album:'
++            : 'spotify:playlist:',
 +      ))
 +        continue;
++      if (albums && item['images'] is List) {
++        for (final image in item['images']) {
++          if (image is Map &&
++              image['url'] is String &&
++              (image['url'] as String).startsWith('https://')) {
++            albumImages[item['uri'] as String] = image['url'] as String;
++            break;
++          }
++        }
++      }
 +      records.add((title: item['name'] as String, id: item['uri'] as String));
 +    }
 +    if (!mounted) return;
@@ -1791,7 +1978,10 @@ index 0000000..1b641c8
 +    setState(() {
 +      library = more ? [...library, ...records] : records;
 +      nextPage = data['next'] as String?;
-+      if (library.isEmpty) message = 'No items found.';
++      if (library.isEmpty)
++        message = albums
++            ? 'Save an album in Spotify to see its cover here.'
++            : 'No items found.';
 +    });
 +  }
 +
@@ -1847,7 +2037,26 @@ index 0000000..1b641c8
 +      return;
 +    }
 +    switch (entry.id) {
++      case 'local-albums':
++        await context.pushNamed(Routes.coverFlow.name);
++        break;
++      case 'local-lists':
++        await context.pushNamed(Routes.playlists.name);
++        break;
++      case 'albums':
++        await fetchLibrary('Spotify albums');
++        break;
++      case 'skip':
++        await connect();
++        await SpotifySdk.skipNext();
++        break;
++      case 'previous':
++        await connect();
++        await SpotifySdk.skipPrevious();
++        break;
 +      case 'authorize':
++        if (clientId.isEmpty) throw StateError('Add a client ID first.');
++        await spotify.token(clientId);
 +        await connect();
 +        message = 'Connected';
 +      case 'disconnect':
@@ -2004,6 +2213,12 @@ index 0000000..1b641c8
 +      page('Radio');
 +      return;
 +    }
++    if ((widget.initialUri == 'Playlist sources' ||
++            widget.initialUri == 'Album sources') &&
++        section != widget.initialUri) {
++      page(widget.initialUri!);
++      return;
++    }
 +    if (section == 'Spotify' ||
 +        section == widget.initialUri ||
 +        widget.initialUri == 'Shared folder setup') {
@@ -2055,6 +2270,11 @@ index 0000000..1b641c8
 +    await super.deviceControlHandler(old, action);
 +  }
 +
++  String clock(int ms) {
++    final seconds = ms ~/ 1000;
++    return '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
++  }
++
 +  void move(int delta) {
 +    if (busy || displayItems.isEmpty) return;
 +    setState(
@@ -2063,6 +2283,10 @@ index 0000000..1b641c8
 +        displayItems.length - 1,
 +      ),
 +    );
++    if (section == 'Spotify albums' && carousel.hasClients) {
++      carousel.jumpToPage(selectedDisplayItem);
++      return;
++    }
 +    if (scrollController.hasClients) {
 +      final pos = scrollController.position;
 +      final y = selectedDisplayItem * rowHeight;
@@ -2103,29 +2327,20 @@ index 0000000..1b641c8
 +                padding: const EdgeInsets.symmetric(horizontal: 8),
 +                child: Row(
 +                  children: [
-+                    if (art != null)
-+                      FutureBuilder<Uint8List?>(
-+                        future: art,
-+                        builder: (context, snapshot) {
-+                          final bytes = snapshot.data;
-+                          return bytes == null
-+                              ? const SizedBox.shrink()
-+                              : Padding(
-+                                  padding: const EdgeInsets.only(right: 8),
-+                                  child: Image.memory(
-+                                    bytes,
-+                                    width: 48,
-+                                    height: 48,
-+                                    fit: BoxFit.contain,
-+                                  ),
-+                                );
-+                        },
++                    const Padding(
++                      padding: EdgeInsets.only(right: 8),
++                      child: SizedBox(
++                        width: 72,
++                        height: 72,
++                        child: SpotifyArtwork(),
 +                      ),
++                    ),
 +                    Expanded(
 +                      child: Text(
 +                        [
 +                          track.isEmpty ? 'No track selected' : track,
 +                          artist,
++                          spotify.album,
 +                        ].where((s) => s.isNotEmpty).join('\n'),
 +                        maxLines: 3,
 +                        overflow: TextOverflow.ellipsis,
@@ -2145,18 +2360,34 @@ index 0000000..1b641c8
 +                    horizontal: 8,
 +                    vertical: 3,
 +                  ),
-+                  child: Align(
-+                    alignment: Alignment.centerLeft,
-+                    child: FractionallySizedBox(
-+                      widthFactor: spotify.progress,
-+                      child: ColoredBox(
-+                        color: ink,
-+                        child: const SizedBox(
-+                          height: 3,
-+                          width: double.infinity,
++                  child: Row(
++                    children: [
++                      Text(
++                        clock((spotify.duration * spotify.progress).round()),
++                        style: TextStyle(fontSize: 11, color: ink),
++                      ),
++                      const SizedBox(width: 5),
++                      Expanded(
++                        child: Align(
++                          alignment: Alignment.centerLeft,
++                          child: FractionallySizedBox(
++                            widthFactor: spotify.progress,
++                            child: ColoredBox(
++                              color: ink,
++                              child: const SizedBox(
++                                height: 3,
++                                width: double.infinity,
++                              ),
++                            ),
++                          ),
 +                        ),
 +                      ),
-+                    ),
++                      const SizedBox(width: 5),
++                      Text(
++                        clock(spotify.duration),
++                        style: TextStyle(fontSize: 11, color: ink),
++                      ),
++                    ],
 +                  ),
 +                ),
 +              ),
@@ -2170,34 +2401,72 @@ index 0000000..1b641c8
 +                ),
 +              ),
 +            Expanded(
-+              child: ListView.builder(
-+                controller: scrollController,
-+                itemExtent: rowHeight,
-+                itemCount: rows.length,
-+                itemBuilder: (c, i) => GestureDetector(
-+                  behavior: HitTestBehavior.opaque,
-+                  onTap: () {
-+                    if (!busy) {
-+                      setState(() => selectedDisplayItem = i);
-+                      run(() => choose(rows[i]));
-+                    }
-+                  },
-+                  onLongPress: () => run(() => hold(rows[i])),
-+                  child: Container(
-+                    alignment: Alignment.centerLeft,
-+                    padding: const EdgeInsets.symmetric(horizontal: 8),
-+                    color: i == selectedDisplayItem ? ink : paper,
-+                    child: Text(
-+                      rows[i].title,
-+                      maxLines: 1,
-+                      overflow: TextOverflow.ellipsis,
-+                      style: TextStyle(
-+                        color: i == selectedDisplayItem ? paper : ink,
++              child: section == 'Spotify albums'
++                  ? PageView.builder(
++                      controller: carousel,
++                      itemCount: rows.length,
++                      onPageChanged: (i) =>
++                          setState(() => selectedDisplayItem = i),
++                      itemBuilder: (c, i) {
++                        final row = rows[i];
++                        final url = albumImages[row.id];
++                        return GestureDetector(
++                          onTap: () => run(() => choose(row)),
++                          child: Padding(
++                            padding: const EdgeInsets.all(5),
++                            child: Column(
++                              children: [
++                                Expanded(
++                                  child: url == null
++                                      ? const Icon(CupertinoIcons.music_note_2)
++                                      : Image.network(
++                                          url,
++                                          fit: BoxFit.contain,
++                                          errorBuilder: (_, __, ___) =>
++                                              const Icon(
++                                                CupertinoIcons.music_note_2,
++                                              ),
++                                        ),
++                                ),
++                                Text(
++                                  row.title,
++                                  maxLines: 1,
++                                  overflow: TextOverflow.ellipsis,
++                                ),
++                              ],
++                            ),
++                          ),
++                        );
++                      },
++                    )
++                  : ListView.builder(
++                      controller: scrollController,
++                      itemExtent: rowHeight,
++                      itemCount: rows.length,
++                      itemBuilder: (c, i) => GestureDetector(
++                        behavior: HitTestBehavior.opaque,
++                        onTap: () {
++                          if (!busy) {
++                            setState(() => selectedDisplayItem = i);
++                            run(() => choose(rows[i]));
++                          }
++                        },
++                        onLongPress: () => run(() => hold(rows[i])),
++                        child: Container(
++                          alignment: Alignment.centerLeft,
++                          padding: const EdgeInsets.symmetric(horizontal: 8),
++                          color: i == selectedDisplayItem ? ink : paper,
++                          child: Text(
++                            rows[i].title,
++                            maxLines: 1,
++                            overflow: TextOverflow.ellipsis,
++                            style: TextStyle(
++                              color: i == selectedDisplayItem ? paper : ink,
++                            ),
++                          ),
++                        ),
 +                      ),
 +                    ),
-+                  ),
-+                ),
-+              ),
 +            ),
 +          ],
 +        ),
@@ -2287,12 +2556,85 @@ index 0000000..69e84fe
 +    ),
 +  );
 +}
+diff --git a/lib/features/rewind/spotify_art.dart b/lib/features/rewind/spotify_art.dart
+new file mode 100644
+index 0000000..cc57b6e
+--- /dev/null
++++ b/lib/features/rewind/spotify_art.dart
+@@ -0,0 +1,67 @@
++import 'dart:typed_data';
++
++import 'package:flutter/cupertino.dart';
++import 'package:classipod/core/extensions/build_context_extensions.dart';
++
++import 'spotify_session.dart';
++
++class SpotifyArtwork extends StatelessWidget {
++  const SpotifyArtwork({super.key, this.caption = false});
++  final bool caption;
++  @override
++  Widget build(BuildContext context) {
++    final placeholder = ColoredBox(
++      color: context.appSurfaceColor,
++      child: Center(
++        child: Icon(
++          CupertinoIcons.music_note_2,
++          color: context.appSecondaryTextColor,
++        ),
++      ),
++    );
++    return Column(
++      mainAxisAlignment: MainAxisAlignment.center,
++      children: [
++        Flexible(
++          child: FutureBuilder<Uint8List?>(
++            key: ValueKey(spotify.uri),
++            future: spotify.art,
++            builder: (context, snap) {
++              final bytes = snap.data;
++              return AspectRatio(
++                aspectRatio: 1,
++                child: ClipRRect(
++                  borderRadius: BorderRadius.circular(8),
++                  child: bytes == null
++                      ? placeholder
++                      : Image.memory(
++                          bytes,
++                          fit: BoxFit.contain,
++                          errorBuilder: (_, __, ___) => placeholder,
++                        ),
++                ),
++              );
++            },
++          ),
++        ),
++        if (caption)
++          Padding(
++            padding: const EdgeInsets.all(4),
++            child: Text(
++              [
++                spotify.track,
++                spotify.artist,
++              ].where((s) => s.isNotEmpty).join('\n'),
++              maxLines: 2,
++              textAlign: TextAlign.center,
++              overflow: TextOverflow.ellipsis,
++              style: TextStyle(
++                fontSize: 12,
++                color: context.appPrimaryTextColor,
++              ),
++            ),
++          ),
++      ],
++    );
++  }
++}
 diff --git a/lib/features/rewind/spotify_session.dart b/lib/features/rewind/spotify_session.dart
 new file mode 100644
-index 0000000..371450d
+index 0000000..5274f27
 --- /dev/null
 +++ b/lib/features/rewind/spotify_session.dart
-@@ -0,0 +1,112 @@
+@@ -0,0 +1,114 @@
 +import 'dart:async';
 +import 'dart:typed_data';
 +
@@ -2316,6 +2658,7 @@ index 0000000..371450d
 +                        : DateTime.now().difference(sampled).inMilliseconds)) /
 +                duration)
 +            .clamp(0.0, 1.0);
++  String album = '';
 +  String track = '', artist = '', uri = '';
 +  bool paused = true, active = false, connected = false;
 +  Future<Uint8List?>? art;
@@ -2366,6 +2709,7 @@ index 0000000..371450d
 +        uri = song?.uri ?? '';
 +        track = song?.name ?? '';
 +        artist = song?.artist.name ?? '';
++        album = song?.album.name ?? '';
 +        position = state.playbackPosition;
 +        duration = song?.duration ?? 0;
 +        sampled = DateTime.now();
@@ -2406,7 +2750,7 @@ index 0000000..371450d
 +  }
 +}
 diff --git a/lib/features/settings/screens/about_screen.dart b/lib/features/settings/screens/about_screen.dart
-index f0cdc83..53026b8 100644
+index f0cdc83..52d3740 100644
 --- a/lib/features/settings/screens/about_screen.dart
 +++ b/lib/features/settings/screens/about_screen.dart
 @@ -33,7 +33,7 @@ class AboutScreen extends ConsumerWidget {
@@ -2423,7 +2767,7 @@ index f0cdc83..53026b8 100644
                  AboutListTile(
                    titleText: context.localization.versionAboutScreenTitle,
 -                  valueText: "2.1.0",
-+                  valueText: "0.2.0 alpha",
++                  valueText: "0.2.1 alpha",
                  ),
                  AboutListTile(
                    titleText: context.localization.madeWithLoveTitle,
@@ -2627,7 +2971,7 @@ index 9f9d188..71cebd7 100644
        supportedLocales: AppLocalizations.supportedLocales,
        showPerformanceOverlay: debuggerTools.showPerformanceOverlay,
 diff --git a/pubspec.yaml b/pubspec.yaml
-index 1c1a7ec..02f1c09 100644
+index 1c1a7ec..396b9a5 100644
 --- a/pubspec.yaml
 +++ b/pubspec.yaml
 @@ -3,7 +3,7 @@ description: "An iPod Classic-inspired player for local music and Subsonic/Navid
@@ -2635,7 +2979,7 @@ index 1c1a7ec..02f1c09 100644
  publish_to: 'none'
  
 -version: 2.1.0+27
-+version: 0.2.0+28
++version: 0.2.1+29
  
  environment:
    sdk: ^3.13.2
