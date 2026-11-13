@@ -1,7 +1,7 @@
 name: Frankenstein Rewind S10 APK
 on:
   push:
-    branches: [feature/library-upgrade]
+    branches: [feature/library-upgrade, preview/music-home]
     paths: ['Rewind.patch', '.github/workflows/rewind-s10.yml']
 permissions:
   contents: read
@@ -30,6 +30,11 @@ jobs:
         working-directory: player
         run: |
           git apply ../Rewind.patch
+          if [ "$GITHUB_REF_NAME" = preview/music-home ]; then
+            sed -i 's/applicationId = "io.github.shivamm98s.frankensteinrewind"/applicationId = "io.github.shivamm98s.frankensteinrewind.preview"/;s/"Frankenstein Rewind")/"Rewind Preview")/g' android/app/build.gradle.kts
+            sed -i 's/android:scheme="frankensteinrewind"/android:scheme="frankensteinrewindpreview"/g' android/app/src/main/AndroidManifest.xml
+            sed -i 's@frankensteinrewind://auth@frankensteinrewindpreview://auth@g' lib/features/rewind/{rewind_screen,spotify_session}.dart
+          fi
           flutter pub get
           flutter gen-l10n
           dart run build_runner build --delete-conflicting-outputs
@@ -44,3 +49,27 @@ jobs:
           path: |
             Frankenstein-Rewind-S10.apk
             signing.txt
+
+  publish-preview:
+    needs: apk
+    if: github.ref_name == 'preview/music-home'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Frankenstein-Rewind-S10
+      - name: Publish installable Music Home preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mv Frankenstein-Rewind-S10.apk Frankenstein-Rewind-Music-Preview.apk
+          sha256sum Frankenstein-Rewind-Music-Preview.apk > SHA256SUMS.txt
+          cat > notes.md <<'NOTES'
+          This side-by-side Android preview puts Spotify inside Music, adds Spotify albums to Cover Flow and gives Spotify and device playlists their own entries. Home and Now Playing show the current Spotify cover, with track timing and playback controls on Now Playing. Settings now sits at the bottom of the main menu.
+
+          Install the APK alongside your current player. To connect Spotify, register the preview Android package `io.github.shivamm98s.frankensteinrewind.preview` with the SHA-1 below and add `frankensteinrewindpreview://auth` to your existing Spotify Developer app. Then enter the same client ID in the preview. Your existing APK and its registration can stay installed. Normal audio files use Android music access. Spotify offline downloads are played by Spotify.
+          NOTES
+          sed -n 's/^Signer #1 certificate SHA-1 digest: /Preview SHA-1: /p' signing.txt >> notes.md
+          gh release create v0.2.1-alpha.1 --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "Frankenstein Rewind 0.2.1 alpha 1 · Music Home preview" --notes-file notes.md Frankenstein-Rewind-Music-Preview.apk signing.txt SHA256SUMS.txt
