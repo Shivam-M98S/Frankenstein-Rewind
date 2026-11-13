@@ -54,10 +54,6 @@ The 0.2 preview installs alongside the original S10 alpha. Look for the new pack
 - **Experimental** includes a glass-style bezel, narrower side margins and an opt-in local-audio spectrum. The spectrum requires Android audio permission and uses the local player’s audio session.
 - **Now Playing** follows the active player. Liked Songs queues subsequent tracks from the loaded list. Use Load more before playing to extend it.
 
-## Support Rewind
-
-Rewind is free. You can support development by testing a build, starring the repository or reporting a playback issue. A payment link will appear here once the maintainer supplies a verified destination.
-
 ## Feedback
 
 [Report a test result](https://github.com/Shivam-M98S/Frankenstein-Rewind/issues) with your phone model, Android version, the action you tried, and what happened. If playback worked, tell us which controls you tested.
