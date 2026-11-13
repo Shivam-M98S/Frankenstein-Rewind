@@ -1,23 +1,47 @@
 diff --git a/android/app/build.gradle.kts b/android/app/build.gradle.kts
-index d9424f3..9e66065 100644
+index d9424f3..6bbbe76 100644
 --- a/android/app/build.gradle.kts
 +++ b/android/app/build.gradle.kts
-@@ -68,8 +68,8 @@ android {
+@@ -26,7 +26,7 @@ android {
+     }
+ 
+     defaultConfig {
+-        applicationId = "com.adeeteya.classipod"
++        applicationId = "io.github.shivamm98s.frankensteinrewind"
+         minSdk = flutter.minSdkVersion
+         targetSdk = flutter.targetSdkVersion
+         versionCode = flutter.versionCode
+@@ -63,13 +63,13 @@ android {
+     productFlavors {
+         create("production") {
+             dimension = "default"
+-            resValue("string", "app_name", "Classipod")
++            resValue("string", "app_name", "Frankenstein Rewind")
+             applicationIdSuffix = ""
          }
          create("dev") {
              dimension = "default"
 -            resValue("string", "app_name", "Classipod Dev")
 -            applicationIdSuffix = ".dev"
 +            resValue("string", "app_name", "Frankenstein Rewind")
-+            applicationIdSuffix = ".frankensteinrewind"
++            applicationIdSuffix = ""
              versionNameSuffix = "-dev"
          }
      }
 diff --git a/android/app/src/main/AndroidManifest.xml b/android/app/src/main/AndroidManifest.xml
-index 0830593..0429905 100644
+index 0830593..9e7ab0a 100644
 --- a/android/app/src/main/AndroidManifest.xml
 +++ b/android/app/src/main/AndroidManifest.xml
-@@ -18,6 +18,15 @@
+@@ -4,6 +4,8 @@
+ 
+     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
++    <uses-permission android:name="android.permission.RECORD_AUDIO" />
++    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+     <uses-permission android:name="android.permission.WAKE_LOCK" />
+     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+@@ -18,8 +20,17 @@
          android:name="${applicationName}"
          android:icon="@mipmap/ic_launcher"
          android:enableOnBackInvokedCallback="true">
@@ -31,9 +55,12 @@ index 0830593..0429905 100644
 +            </intent-filter>
 +        </activity>
          <activity
-             android:name="com.ryanheise.audioservice.AudioServiceActivity"
+-            android:name="com.ryanheise.audioservice.AudioServiceActivity"
++            android:name="com.adeeteya.classipod.MainActivity"
              android:exported="true"
-@@ -74,6 +83,7 @@
+             android:launchMode="singleTop"
+             android:taskAffinity=""
+@@ -74,6 +85,7 @@
  
           In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
      <queries>
@@ -41,6 +68,62 @@ index 0830593..0429905 100644
          <intent>
              <action android:name="android.intent.action.PROCESS_TEXT" />
              <data android:mimeType="text/plain" />
+diff --git a/android/app/src/main/kotlin/com/adeeteya/classipod/MainActivity.kt b/android/app/src/main/kotlin/com/adeeteya/classipod/MainActivity.kt
+index 67e9c63..fe9e1fb 100644
+--- a/android/app/src/main/kotlin/com/adeeteya/classipod/MainActivity.kt
++++ b/android/app/src/main/kotlin/com/adeeteya/classipod/MainActivity.kt
+@@ -1,5 +1,49 @@
+ package com.adeeteya.classipod
+ 
+-import io.flutter.embedding.android.FlutterActivity
++import android.media.audiofx.Visualizer
++import android.os.Handler
++import android.os.Looper
++import com.ryanheise.audioservice.AudioServiceActivity
++import io.flutter.embedding.engine.FlutterEngine
++import io.flutter.plugin.common.EventChannel
++import kotlin.math.hypot
++import kotlin.math.ln
+ 
+-class MainActivity : FlutterActivity()
++class MainActivity : AudioServiceActivity() {
++    private var visualizer: Visualizer? = null
++    override fun configureFlutterEngine(engine: FlutterEngine) {
++        super.configureFlutterEngine(engine)
++        val main = Handler(Looper.getMainLooper())
++        EventChannel(engine.dartExecutor.binaryMessenger, "frankensteinrewind/spectrum")
++            .setStreamHandler(object : EventChannel.StreamHandler {
++                override fun onListen(arguments: Any?, events: EventChannel.EventSink) {
++                    releaseVisualizer()
++                    try {
++                        val session = (arguments as Number).toInt()
++                        require(session > 0)
++                        val effect = Visualizer(session)
++                        visualizer = effect
++                        effect.captureSize = Visualizer.getCaptureSizeRange().last()
++                        effect.setDataCaptureListener(object : Visualizer.OnDataCaptureListener {
++                            override fun onWaveFormDataCapture(v: Visualizer, data: ByteArray, rate: Int) {}
++                            override fun onFftDataCapture(v: Visualizer, data: ByteArray, rate: Int) {
++                                val bins = (0 until 24).map { band ->
++                                    val start = 1 + band * (data.size / 2 - 1) / 24
++                                    val end = 1 + (band + 1) * (data.size / 2 - 1) / 24
++                                    val peak = (start until end).maxOfOrNull { i ->
++                                        hypot(data[2*i].toDouble(), data[2*i+1].toDouble())
++                                    } ?: 0.0
++                                    (ln(1 + peak) * 21).toInt().coerceIn(0,100)
++                                }
++                                main.post { if (visualizer === effect) events.success(bins) }
++                            }
++                        }, minOf(12000, Visualizer.getMaxCaptureRate()), false, true)
++                        effect.enabled = true
++                    } catch (e: Exception) { releaseVisualizer(); events.error("spectrum", e.message, null) }
++                }
++                override fun onCancel(arguments: Any?) { releaseVisualizer() }
++            })
++    }
++    private fun releaseVisualizer() { visualizer?.release(); visualizer = null }
++    override fun onDestroy() { releaseVisualizer(); super.onDestroy() }
++}
 diff --git a/android/build.gradle.kts b/android/build.gradle.kts
 index 1783c84..64c85f9 100644
 --- a/android/build.gradle.kts
@@ -55,6 +138,67 @@ index 1783c84..64c85f9 100644
      }
  }
  
+diff --git a/assets/UPSTREAM-LICENSE.txt b/assets/UPSTREAM-LICENSE.txt
+new file mode 100644
+index 0000000..823c59f
+--- /dev/null
++++ b/assets/UPSTREAM-LICENSE.txt
+@@ -0,0 +1,27 @@
++Copyright (c) 2025, Aditya R
++All rights reserved.
++
++Redistribution and use in source and binary forms, with or without
++modification, are permitted provided that the following conditions are met:
++1. Redistributions of source code must retain the above copyright
++   notice, this list of conditions and the following disclaimer.
++2. Redistributions in binary form must reproduce the above copyright
++   notice, this list of conditions and the following disclaimer in the
++   documentation and/or other materials provided with the distribution.
++3. All advertising materials mentioning features or use of this software
++   must display the following acknowledgement:
++   This product includes software developed by Aditya R.
++4. Neither the name of Aditya R nor the
++   names of its contributors may be used to endorse or promote products
++   derived from this software without specific prior written permission.
++
++THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER ''AS IS'' AND ANY
++EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
++WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
++DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
++FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
++SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
++CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
++OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
++USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+\ No newline at end of file
+diff --git a/lib/classipod_app.dart b/lib/classipod_app.dart
+index d7c13b5..790e42d 100644
+--- a/lib/classipod_app.dart
++++ b/lib/classipod_app.dart
+@@ -28,7 +28,7 @@ class ClassipodApp extends ConsumerWidget {
+     );
+     final router = ref.watch(routerProvider);
+     return CupertinoApp.router(
+-      onGenerateTitle: (context) => context.localization.appTitle,
++      onGenerateTitle: (context) => 'Frankenstein Rewind',
+       localizationsDelegates: AppLocalizations.localizationsDelegates,
+       supportedLocales: AppLocalizations.supportedLocales,
+       debugShowCheckedModeBanner: false,
+diff --git a/lib/core/constants/constants.dart b/lib/core/constants/constants.dart
+index 4927429..462ebb4 100644
+--- a/lib/core/constants/constants.dart
++++ b/lib/core/constants/constants.dart
+@@ -13,9 +13,6 @@ class Constants {
+   static const String defaultNotificationAlbumArtImageUrl =
+       "'https://files.radio.co/humorous-skink/staging/default-artwork.png'";
+ 
+-  //If you are seeing this please consider donating to the below link😉
+-  static const String donationLinkUrl = "https://buymeacoffee.com/adeeteya";
+-
+   // Click Wheel Sensitivity Constants
+   static const double clickWheelVeryLowSensitivitySmallThreshold = 64;
+   static const double clickWheelVeryLowSensitivityBigThreshold = 800;
 diff --git a/lib/core/navigation/routes.dart b/lib/core/navigation/routes.dart
 index d7d1493..128292d 100644
 --- a/lib/core/navigation/routes.dart
@@ -99,11 +243,184 @@ index d7d1493..128292d 100644
                    GoRoute(
                      path: Routes.nowPlaying.toString(),
                      name: Routes.nowPlaying.name,
+diff --git a/lib/core/repositories/library/library_repository.dart b/lib/core/repositories/library/library_repository.dart
+index aec529d..2e04b4c 100644
+--- a/lib/core/repositories/library/library_repository.dart
++++ b/lib/core/repositories/library/library_repository.dart
+@@ -1,3 +1,5 @@
++import 'package:classipod/features/rewind/cover_cache.dart';
++
+ import 'dart:io';
+ 
+ import 'package:classipod/core/constants/constants.dart';
+@@ -128,6 +130,7 @@ class LibraryRepository {
+       }
+     }
+ 
++    final covers = CoverCache(artworkDirectory);
+     final verifiedArtwork = <String>{};
+     Future<bool> artworkExists(String? path) async {
+       if (path == null) return false;
+@@ -191,6 +194,14 @@ class LibraryRepository {
+             ),
+           };
+         }
++        final metadata = row['music'] as MusicMetadata;
++        if (!await artworkExists(metadata.thumbnailPath)) {
++          final cover = await covers.find(metadata);
++          if (cover != null) {
++            row['music'] = metadata.copyWith(thumbnailPath: cover);
++            row['hasCover'] = true;
++          }
++        }
+         row['artworkReadFailed'] = false;
+         if (row['hasCover'] == true) {
+           final music = row['music'] as MusicMetadata;
+diff --git a/lib/core/services/audio_player_service.dart b/lib/core/services/audio_player_service.dart
+index 4e52747..3d9c679 100644
+--- a/lib/core/services/audio_player_service.dart
++++ b/lib/core/services/audio_player_service.dart
+@@ -1,3 +1,6 @@
++import 'package:classipod/features/rewind/network_library.dart';
++import 'package:classipod/features/rewind/spotify_session.dart';
++
+ import 'dart:async';
+ 
+ import 'package:audio_service/audio_service.dart';
+@@ -27,6 +30,19 @@ final libraryAudioHandlerProvider = Provider<LibraryAudioHandler>((ref) {
+   final handler = LibraryAudioHandler(
+     ref.read(audioPlayerProvider),
+     resolveSource: (song) async {
++      if (song.filePath?.startsWith('smbfile:') == true) {
++        final file = await networkLibrary.cacheTrack(
++          song.filePath!.substring(8),
++        );
++        return AudioSource.uri(
++          file.uri,
++          tag: MediaItem(
++            id: song.identity,
++            title: song.getTrackName,
++            album: 'Home Server',
++          ),
++        );
++      }
+       if (!song.isSubsonic) return song.toAudioSource() as UriAudioSource;
+       final remote = ref.read(subsonicControllerProvider).value;
+       final context = rootNavigatorKey.currentContext;
+@@ -38,6 +54,12 @@ final libraryAudioHandlerProvider = Provider<LibraryAudioHandler>((ref) {
+       return ref.read(subsonicControllerProvider.notifier).resolve(song);
+     },
+   );
++  final localSubscription = ref.read(audioPlayerProvider).playingStream.listen((
++    playing,
++  ) {
++    if (playing) spotify.selectLocal();
++  });
++  ref.onDispose(localSubscription.cancel);
+   ref.listen(
+     subsonicControllerProvider.select(
+       (value) => (value.value?.enabled, value.value?.config?.id),
+diff --git a/lib/core/services/playback/playback_bootstrap.dart b/lib/core/services/playback/playback_bootstrap.dart
+index 82d3ce2..70a3a9b 100644
+--- a/lib/core/services/playback/playback_bootstrap.dart
++++ b/lib/core/services/playback/playback_bootstrap.dart
+@@ -4,8 +4,8 @@ Future<void> initializeMediaSession(AudioHandler handler) async {
+   await AudioService.init(
+     builder: () => handler,
+     config: const AudioServiceConfig(
+-      androidNotificationChannelId: 'classipod',
+-      androidNotificationChannelName: 'ClassiPod Audio playback',
++      androidNotificationChannelId: 'frankenstein-rewind',
++      androidNotificationChannelName: 'Frankenstein Rewind playback',
+       androidNotificationChannelDescription:
+           'Notification to control the currently playing music files',
+       androidNotificationOngoing: true,
+diff --git a/lib/core/widgets/display_list_tile.dart b/lib/core/widgets/display_list_tile.dart
+index 94ff1e2..afb6440 100644
+--- a/lib/core/widgets/display_list_tile.dart
++++ b/lib/core/widgets/display_list_tile.dart
+@@ -9,12 +9,14 @@ class DisplayListTile extends StatelessWidget {
+   final String text;
+   final bool isSelected;
+   final VoidCallback? onTap;
++  final VoidCallback? onLongPress;
+ 
+   const DisplayListTile({
+     super.key,
+     required this.text,
+     required this.isSelected,
+     this.onTap,
++    this.onLongPress,
+   });
+ 
+   @override
+@@ -27,6 +29,7 @@ class DisplayListTile extends StatelessWidget {
+ 
+     return GestureDetector(
+       onTap: onTap,
++      onLongPress: onLongPress,
+       child: SizedBox(
+         height: 30,
+         width: double.infinity,
+diff --git a/lib/features/app_startup/controllers/app_startup_controller.dart b/lib/features/app_startup/controllers/app_startup_controller.dart
+index 10fd766..add07ba 100644
+--- a/lib/features/app_startup/controllers/app_startup_controller.dart
++++ b/lib/features/app_startup/controllers/app_startup_controller.dart
+@@ -27,7 +27,7 @@ final appStartupControllerProvider = FutureProvider<void>((ref) async {
+     ],
+     if (!kIsWeb) ref.watch(deviceDirectoryProvider.future),
+     ref.watch(sharedPreferencesWithCacheProvider.future),
+-    Hive.initFlutter("ClassiPod"),
++    Hive.initFlutter("FrankensteinRewind"),
+   ]);
+   Hive.registerAdapters();
+   await Hive.openBox<PlaylistModel>(Constants.playlistBoxName);
+@@ -36,7 +36,7 @@ final appStartupControllerProvider = FutureProvider<void>((ref) async {
+   );
+   if (!kIsWeb && (Platform.isWindows || Platform.isLinux)) {
+     JustAudioMediaKit.ensureInitialized();
+-    JustAudioMediaKit.title = 'ClassiPod';
++    JustAudioMediaKit.title = 'Frankenstein Rewind';
+   }
+   await initializeMediaSession(ref.read(libraryAudioHandlerProvider));
+   unawaited(ref.read(clickSoundServiceProvider).preload());
+diff --git a/lib/features/custom_screen_elements/custom_screen.dart b/lib/features/custom_screen_elements/custom_screen.dart
+index aa884ff..aba8416 100644
+--- a/lib/features/custom_screen_elements/custom_screen.dart
++++ b/lib/features/custom_screen_elements/custom_screen.dart
+@@ -1,3 +1,6 @@
++import 'package:classipod/features/rewind/spotify_session.dart';
++import 'package:spotify_sdk/spotify_sdk.dart';
++
+ import 'dart:async';
+ 
+ import 'package:classipod/core/extensions/build_context_extensions.dart';
+@@ -99,10 +102,18 @@ mixin CustomScreen<T extends ConsumerStatefulWidget> on ConsumerState<T> {
+   }
+ 
+   Future<void> seekForward() async {
++    if (spotify.active && spotify.connected) {
++      await SpotifySdk.skipNext();
++      return;
++    }
+     await ref.read(audioPlayerServiceProvider.notifier).nextSong();
+   }
+ 
+   Future<void> seekBackward() async {
++    if (spotify.active && spotify.connected) {
++      await SpotifySdk.skipPrevious();
++      return;
++    }
+     await ref.read(audioPlayerServiceProvider.notifier).seekBackwards();
+   }
+ 
 diff --git a/lib/features/device/services/device_buttons_service_provider.dart b/lib/features/device/services/device_buttons_service_provider.dart
-index 3ab26ce..377900c 100644
+index 3ab26ce..d644f80 100644
 --- a/lib/features/device/services/device_buttons_service_provider.dart
 +++ b/lib/features/device/services/device_buttons_service_provider.dart
-@@ -1,5 +1,9 @@
+@@ -1,5 +1,11 @@
++import 'package:classipod/features/rewind/spotify_session.dart';
++import 'package:spotify_sdk/spotify_sdk.dart';
 +import 'package:classipod/core/extensions/go_router_extensions.dart';
 +
  import 'dart:io';
@@ -113,19 +430,27 @@ index 3ab26ce..377900c 100644
  import 'package:classipod/core/services/audio_player_service.dart';
  import 'package:classipod/core/services/click_sound_service.dart';
  import 'package:classipod/features/device/models/device_action.dart';
-@@ -54,7 +58,9 @@ class DeviceButtonsServiceNotifier extends Notifier<DeviceAction?> {
+@@ -54,7 +60,17 @@ class DeviceButtonsServiceNotifier extends Notifier<DeviceAction?> {
      await Future.wait([buttonPressVibrate(), clickWheelSound()]);
      state = null;
      state = DeviceAction.playPause;
 -    await ref.read(audioPlayerServiceProvider.notifier).togglePlayback();
 +    if (ref.read(routerProvider).locationNamed != Routes.rewind.name) {
++      if (spotify.active && spotify.connected) {
++        if (spotify.paused) {
++          await SpotifySdk.resume();
++        } else {
++          await SpotifySdk.pause();
++        }
++        return;
++      }
 +      await ref.read(audioPlayerServiceProvider.notifier).togglePlayback();
 +    }
    }
  
    void resetDeviceAction() {
 diff --git a/lib/features/device/widgets/device_frame.dart b/lib/features/device/widgets/device_frame.dart
-index 6c8efa1..62495d7 100644
+index 6c8efa1..a8bd28c 100644
 --- a/lib/features/device/widgets/device_frame.dart
 +++ b/lib/features/device/widgets/device_frame.dart
 @@ -1,3 +1,4 @@
@@ -133,17 +458,19 @@ index 6c8efa1..62495d7 100644
  import 'package:classipod/core/constants/assets.dart';
  import 'package:classipod/core/constants/keys.dart';
  import 'package:classipod/features/device/widgets/device_controls.dart';
-@@ -19,99 +20,106 @@ class DeviceFrame extends ConsumerWidget {
+@@ -19,98 +20,124 @@ class DeviceFrame extends ConsumerWidget {
        settingsPreferencesControllerProvider.select((e) => e.deviceColor),
      );
      final deviceColorStyle = deviceColor.style;
 -    final solidFrameColor = deviceColorStyle.solidFrameColor;
-+    return ValueListenableBuilder<bool>(
-+      valueListenable: rewindNight,
-+      builder: (context, night, _) {
-+        final solidFrameColor = night
-+            ? const Color(0xff28292c)
-+            : deviceColorStyle.solidFrameColor;
++    return ListenableBuilder(
++      listenable: rewindAppearance,
++      builder: (context, _) => ValueListenableBuilder<bool>(
++        valueListenable: rewindNight,
++        builder: (context, night, _) {
++          final solidFrameColor = night
++              ? const Color(0xff28292c)
++              : deviceColorStyle.solidFrameColor;
  
 -    return DecoratedBox(
 -      decoration: BoxDecoration(
@@ -177,25 +504,25 @@ index 6c8efa1..62495d7 100644
 -                  boxShadow: [BoxShadow(blurRadius: 100, spreadRadius: 1)],
 -                ),
 -              ),
--            ),
-+        return DecoratedBox(
-+          decoration: BoxDecoration(
-+            color: solidFrameColor,
-+            image: solidFrameColor == null
-+                ? DecorationImage(
-+                    image: const AssetImage(Assets.noiseImage),
-+                    fit: BoxFit.cover,
-+                    opacity: deviceColorStyle.noiseOpacity,
-+                  )
-+                : null,
-+            gradient: solidFrameColor == null
-+                ? LinearGradient(
-+                    begin: Alignment.topCenter,
-+                    end: Alignment.bottomCenter,
-+                    colors: deviceColorStyle.frameGradientColors,
-+                  )
-+                : null,
-           ),
++          return DecoratedBox(
++            decoration: BoxDecoration(
++              color: solidFrameColor,
++              image: solidFrameColor == null
++                  ? DecorationImage(
++                      image: const AssetImage(Assets.noiseImage),
++                      fit: BoxFit.cover,
++                      opacity: deviceColorStyle.noiseOpacity,
++                    )
++                  : null,
++              gradient: solidFrameColor == null
++                  ? LinearGradient(
++                      begin: Alignment.topCenter,
++                      end: Alignment.bottomCenter,
++                      colors: deviceColorStyle.frameGradientColors,
++                    )
++                  : null,
+             ),
+-          ),
 -          Positioned(
 -            bottom: 0,
 -            child: SizedBox(
@@ -204,22 +531,25 @@ index 6c8efa1..62495d7 100644
 -              child: const DecoratedBox(
 -                decoration: BoxDecoration(
 -                  boxShadow: [BoxShadow(blurRadius: 100, spreadRadius: 1)],
-+          child: Stack(
-+            fit: StackFit.expand,
-+            clipBehavior: Clip.none,
-+            children: [
-+              Positioned(
-+                top: 0,
-+                child: SizedBox(
-+                  height: 20,
-+                  width: size.width,
-+                  child: const DecoratedBox(
-+                    decoration: BoxDecoration(
-+                      boxShadow: [BoxShadow(blurRadius: 100, spreadRadius: 1)],
++            child: Stack(
++              fit: StackFit.expand,
++              clipBehavior: Clip.none,
++              children: [
++                Positioned(
++                  top: 0,
++                  child: SizedBox(
++                    height: 20,
++                    width: size.width,
++                    child: const DecoratedBox(
++                      decoration: BoxDecoration(
++                        boxShadow: [
++                          BoxShadow(blurRadius: 100, spreadRadius: 1),
++                        ],
++                      ),
 +                    ),
 +                  ),
                  ),
-               ),
+-              ),
 -            ),
 -          ),
 -          Positioned(
@@ -230,18 +560,21 @@ index 6c8efa1..62495d7 100644
 -              child: const DecoratedBox(
 -                decoration: BoxDecoration(
 -                  boxShadow: [BoxShadow(blurRadius: 100, spreadRadius: 1)],
-+              Positioned(
-+                bottom: 0,
-+                child: SizedBox(
-+                  height: 20,
-+                  width: size.width,
-+                  child: const DecoratedBox(
-+                    decoration: BoxDecoration(
-+                      boxShadow: [BoxShadow(blurRadius: 100, spreadRadius: 1)],
++                Positioned(
++                  bottom: 0,
++                  child: SizedBox(
++                    height: 20,
++                    width: size.width,
++                    child: const DecoratedBox(
++                      decoration: BoxDecoration(
++                        boxShadow: [
++                          BoxShadow(blurRadius: 100, spreadRadius: 1),
++                        ],
++                      ),
 +                    ),
 +                  ),
                  ),
-               ),
+-              ),
 -            ),
 -          ),
 -          Positioned(
@@ -252,18 +585,21 @@ index 6c8efa1..62495d7 100644
 -              child: const DecoratedBox(
 -                decoration: BoxDecoration(
 -                  boxShadow: [BoxShadow(blurRadius: 100, spreadRadius: 1)],
-+              Positioned(
-+                left: 0,
-+                child: SizedBox(
-+                  height: size.height,
-+                  width: 20,
-+                  child: const DecoratedBox(
-+                    decoration: BoxDecoration(
-+                      boxShadow: [BoxShadow(blurRadius: 100, spreadRadius: 1)],
++                Positioned(
++                  left: 0,
++                  child: SizedBox(
++                    height: size.height,
++                    width: 20,
++                    child: const DecoratedBox(
++                      decoration: BoxDecoration(
++                        boxShadow: [
++                          BoxShadow(blurRadius: 100, spreadRadius: 1),
++                        ],
++                      ),
 +                    ),
 +                  ),
                  ),
-               ),
+-              ),
 -            ),
 -          ),
 -          SafeArea(
@@ -273,14 +609,17 @@ index 6c8efa1..62495d7 100644
 -                constraints: const BoxConstraints(
 -                  maxHeight: 960,
 -                  maxWidth: 450,
-+              Positioned(
-+                right: 0,
-+                child: SizedBox(
-+                  height: size.height,
-+                  width: 20,
-+                  child: const DecoratedBox(
-+                    decoration: BoxDecoration(
-+                      boxShadow: [BoxShadow(blurRadius: 100, spreadRadius: 1)],
++                Positioned(
++                  right: 0,
++                  child: SizedBox(
++                    height: size.height,
++                    width: 20,
++                    child: const DecoratedBox(
++                      decoration: BoxDecoration(
++                        boxShadow: [
++                          BoxShadow(blurRadius: 100, spreadRadius: 1),
++                        ],
++                      ),
 +                    ),
 +                  ),
                  ),
@@ -291,47 +630,110 @@ index 6c8efa1..62495d7 100644
 -                    DeviceControls(key: deviceControlsGlobalKey),
 -                    const Spacer(),
 -                  ],
-+              ),
-+              SafeArea(
-+                minimum: const EdgeInsets.fromLTRB(20, 30, 20, 20),
-+                child: Center(
-+                  child: ConstrainedBox(
-+                    constraints: const BoxConstraints(
-+                      maxHeight: 960,
-+                      maxWidth: 450,
-+                    ),
-+                    child: Column(
-+                      children: [
-+                        DeviceScreen(key: deviceScreenGlobalKey, child: child),
-+                        const Spacer(flex: 2),
-+                        DeviceControls(key: deviceControlsGlobalKey),
-+                        const Spacer(),
-+                      ],
++                SafeArea(
++                  minimum: EdgeInsets.fromLTRB(
++                    rewindPrefs.getBool('S10 Edge') == true ? 4 : 20,
++                    30,
++                    rewindPrefs.getBool('S10 Edge') == true ? 4 : 20,
++                    20,
++                  ),
++                  child: Center(
++                    child: ConstrainedBox(
++                      constraints: const BoxConstraints(
++                        maxHeight: 960,
++                        maxWidth: 450,
++                      ),
++                      child: Column(
++                        children: [
++                          DeviceScreen(
++                            key: deviceScreenGlobalKey,
++                            child: child,
++                          ),
++                          const Spacer(flex: 2),
++                          DeviceControls(key: deviceControlsGlobalKey),
++                          const Spacer(),
++                        ],
++                      ),
 +                    ),
 +                  ),
                  ),
-               ),
--            ),
-+            ],
-           ),
+-              ),
++              ],
+             ),
+-          ),
 -        ],
--      ),
-+        );
-+      },
++          );
++        },
+       ),
      );
    }
- }
+diff --git a/lib/features/device/widgets/device_screen.dart b/lib/features/device/widgets/device_screen.dart
+index c7f8c88..77d2ad7 100644
+--- a/lib/features/device/widgets/device_screen.dart
++++ b/lib/features/device/widgets/device_screen.dart
+@@ -1,3 +1,4 @@
++import 'package:classipod/features/rewind/rewind_preferences.dart';
+ import 'package:classipod/core/constants/constants.dart';
+ import 'package:classipod/core/extensions/build_context_extensions.dart';
+ import 'package:classipod/features/settings/controller/settings_preferences_controller.dart';
+@@ -19,6 +20,7 @@ class DeviceScreen extends ConsumerWidget {
+ 
+     final size = MediaQuery.sizeOf(context);
+ 
++    final glass = rewindPrefs.getBool('Liquid Glass') == true;
+     return AbsorbPointer(
+       absorbing: !isTouchScreenEnabled,
+       child: Container(
+@@ -26,17 +28,34 @@ class DeviceScreen extends ConsumerWidget {
+         width: double.infinity,
+         decoration: BoxDecoration(
+           color: context.appDeviceScreenBackgroundColor,
+-          borderRadius: BorderRadius.circular(8),
++          gradient: glass
++              ? LinearGradient(
++                  begin: Alignment.topLeft,
++                  end: Alignment.bottomRight,
++                  colors: [
++                    const Color(0xffadcedb),
++                    context.appSurfaceColor,
++                    const Color(0xff566778),
++                  ],
++                )
++              : null,
++          boxShadow: glass
++              ? [const BoxShadow(color: Color(0x60435d69), blurRadius: 14)]
++              : null,
++          borderRadius: BorderRadius.circular(glass ? 18 : 8),
+           border: Border.all(
+             color: context.appDeviceScreenBorderColor,
+-            width: 5,
++            width: glass ? 2 : 5,
+           ),
+         ),
+         child: MediaQuery(
+           data: MediaQuery.of(
+             context,
+           ).copyWith(size: Size(size.width - 40 - 10, Constants.screenHeight)),
+-          child: child,
++          child: ClipRRect(
++            borderRadius: BorderRadius.circular(glass ? 16 : 3),
++            child: child,
++          ),
+         ),
+       ),
+     );
 diff --git a/lib/features/menu/screens/main_menu_screen.dart b/lib/features/menu/screens/main_menu_screen.dart
-index f0dc83c..3f3052f 100644
+index f0dc83c..feb011f 100644
 --- a/lib/features/menu/screens/main_menu_screen.dart
 +++ b/lib/features/menu/screens/main_menu_screen.dart
-@@ -1,3 +1,5 @@
+@@ -1,3 +1,6 @@
++import 'package:classipod/features/rewind/spotify_session.dart';
 +import 'package:classipod/features/rewind/rewind_preferences.dart';
 +
  import 'dart:async';
  
  import 'package:classipod/core/extensions/build_context_extensions.dart';
-@@ -13,14 +15,20 @@ import 'package:cupertino_ui/cupertino_ui.dart';
+@@ -13,14 +16,26 @@ import 'package:cupertino_ui/cupertino_ui.dart';
  import 'package:flutter_riverpod/flutter_riverpod.dart';
  import 'package:go_router/go_router.dart';
  
@@ -344,31 +746,97 @@ index f0dc83c..3f3052f 100644
    shuffleSongs,
 -  nowPlaying;
 +  nowPlaying,
++  radio,
++  server,
 +  spotify;
  
    String title(BuildContext context) {
      switch (this) {
++      case radio:
++        return 'Radio';
++      case server:
++        return 'Home Server';
 +      case spotify:
 +        return 'Spotify';
        case music:
          return context.localization.musicMenuScreenTitle;
        case settings:
-@@ -48,7 +56,13 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
+@@ -48,7 +63,73 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
    String get routeName => Routes.menu.name;
  
    @override
 -  List<_MainMenuDisplayItems> get displayItems => _MainMenuDisplayItems.values;
-+  List<Object> get displayItems => [
-+    for (final item in _MainMenuDisplayItems.values)
-+      if (item != _MainMenuDisplayItems.spotify ||
-+          (!kIsWeb && defaultTargetPlatform == TargetPlatform.android))
-+        item,
-+    ...rewindPins.value.keys,
-+  ];
++  List<Object> get displayItems {
++    final items = <Object>[
++      for (final item in _MainMenuDisplayItems.values)
++        if (item != _MainMenuDisplayItems.spotify ||
++            (!kIsWeb && defaultTargetPlatform == TargetPlatform.android))
++          item,
++      ...rewindPins.value.keys,
++    ];
++    final hidden = rewindPrefs.getStringList('rewind.hidden') ?? [];
++    items.removeWhere(
++      (e) =>
++          hidden.contains(e.toString()) && e != _MainMenuDisplayItems.settings,
++    );
++    final order = rewindPrefs.getStringList('rewind.menu') ?? [];
++    return [
++      ...order.expand((key) => items.where((e) => e.toString() == key)),
++      ...items.where((e) => !order.contains(e.toString())),
++    ];
++  }
++
++  @override
++  Future<void> onSelectLongPress() async {
++    final items = displayItems.toList();
++    final item = items[selectedDisplayItem];
++    final offset = await showCupertinoModalPopup<int>(
++      context: context,
++      builder: (c) => CupertinoActionSheet(
++        actions: [
++          for (final entry in [
++            (title: 'Move up', d: -1),
++            (title: 'Move down', d: 1),
++            (title: 'Pin to top', d: -999),
++            if (item != _MainMenuDisplayItems.settings)
++              (title: 'Hide from Home', d: 999),
++            (title: 'Restore default order and hidden items', d: 0),
++          ])
++            CupertinoActionSheetAction(
++              onPressed: () => Navigator.pop(c, entry.d),
++              child: Text(entry.title),
++            ),
++        ],
++      ),
++    );
++    if (offset == null || !mounted) return;
++    if (offset == 0) {
++      await rewindPrefs.remove('rewind.menu');
++      await rewindPrefs.remove('rewind.hidden');
++    } else if (offset == 999) {
++      await rewindPrefs.setStringList('rewind.hidden', [
++        ...?rewindPrefs.getStringList('rewind.hidden'),
++        item.toString(),
++      ]);
++    } else {
++      items.remove(item);
++      items.insert((selectedDisplayItem + offset).clamp(0, items.length), item);
++      await rewindPrefs.setStringList(
++        'rewind.menu',
++        items.map((e) => e.toString()).toList(),
++      );
++    }
++    if (mounted)
++      setState(
++        () => selectedDisplayItem = displayItems
++            .indexOf(item)
++            .clamp(0, displayItems.length - 1),
++      );
++  }
  
    @override
    void onMenuButtonPressed() {
-@@ -57,11 +71,18 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
+@@ -57,16 +138,33 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
  
    @override
    Future<void> onSelectPressed() =>
@@ -383,22 +851,40 @@ index f0dc83c..3f3052f 100644
 +      return;
 +    }
      switch (menuItem) {
++      case _MainMenuDisplayItems.radio:
++        await context.pushNamed(Routes.rewind.name, extra: 'Radio');
++        break;
++      case _MainMenuDisplayItems.server:
++        await context.pushNamed(Routes.rewind.name, extra: 'Home Server');
++        break;
 +      case _MainMenuDisplayItems.spotify:
 +        await context.pushNamed(Routes.rewind.name);
 +        break;
        case _MainMenuDisplayItems.music:
          context.goNamed(Routes.musicMenu.name);
          break;
-@@ -91,6 +112,8 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
+       case _MainMenuDisplayItems.nowPlaying:
+-        await _navigateToNowPlayingScreen();
++        if (spotify.active) {
++          await context.pushNamed(Routes.rewind.name, extra: 'Now Playing');
++        } else {
++          await _navigateToNowPlayingScreen();
++        }
+         break;
+       case _MainMenuDisplayItems.settings:
+         context.goNamed(Routes.settings.name);
+@@ -91,6 +189,10 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
    void _changeSplitScreenType() {
      if (!mounted || context.router.locationNamed != routeName) return;
      switch (displayItems[selectedDisplayItem]) {
++      case _MainMenuDisplayItems.radio:
++      case _MainMenuDisplayItems.server:
 +      case String():
 +      case _MainMenuDisplayItems.spotify:
        case _MainMenuDisplayItems.music:
          ref.read(splitScreenControllerProvider.notifier).changeSplitScreenType =
              SplitScreenType.albumArt;
-@@ -110,9 +133,26 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
+@@ -110,9 +212,26 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
      }
    }
  
@@ -425,7 +911,7 @@ index f0dc83c..3f3052f 100644
      WidgetsBinding.instance.addPostFrameCallback((_) {
        ref.read(tutorialControllerProvider.notifier).playMenuTutorial();
      });
-@@ -149,7 +189,11 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
+@@ -149,8 +268,16 @@ class _MainMenuScreenState extends ConsumerState<MainMenuScreen>
                  itemBuilder: (context, index) {
                    return DisplayListTile(
                      key: ValueKey(displayItems[index]),
@@ -436,14 +922,542 @@ index f0dc83c..3f3052f 100644
 +                      _ => '',
 +                    },
                      isSelected: selectedDisplayItem == index,
++                    onLongPress: () {
++                      setState(() => selectedDisplayItem = index);
++                      onSelectLongPress();
++                    },
                      onTap: () async => _navigateToScreen(displayItems[index]),
                    );
+                 },
+diff --git a/lib/features/menu/widgets/now_playing_preview_widget.dart b/lib/features/menu/widgets/now_playing_preview_widget.dart
+index 435c1a8..4f5ec56 100644
+--- a/lib/features/menu/widgets/now_playing_preview_widget.dart
++++ b/lib/features/menu/widgets/now_playing_preview_widget.dart
+@@ -1,3 +1,4 @@
++import 'package:classipod/features/rewind/spotify_session.dart';
+ import 'package:classipod/core/constants/app_palette.dart';
+ import 'package:classipod/core/extensions/build_context_extensions.dart';
+ import 'package:classipod/core/theme/ipod_gradients.dart';
+@@ -17,57 +18,72 @@ class NowPlayingPreviewWidget extends ConsumerWidget {
+       nowPlayingDetailsProvider.select((e) => e.currentMetadata),
+     );
+ 
+-    return SizedBox(
+-      key: const ValueKey(SplitScreenType.nowPlaying),
+-      width: double.infinity,
+-      child: DecoratedBox(
+-        decoration: BoxDecoration(
+-          gradient: IpodGradients.splitPreviewFor(context),
+-        ),
+-        child: Padding(
+-          padding: const EdgeInsets.all(20),
+-          child: Column(
+-            children: [
+-              Spacer(flex: (currentMetadata != null) ? 2 : 1),
+-              const Icon(
+-                CupertinoIcons.music_note_2,
+-                size: 65,
+-                color: AppPalette.previewForeground,
++    return ListenableBuilder(
++      listenable: spotify,
++      builder: (context, _) {
++        if (spotify.active && spotify.track.isNotEmpty)
++          return Center(
++            child: Padding(
++              padding: const EdgeInsets.all(8),
++              child: Text(
++                [spotify.track, spotify.artist].join('\n'),
++                textAlign: TextAlign.center,
+               ),
+-              const Spacer(),
+-              if (currentMetadata != null) ...[
+-                MarqueeText(
+-                  currentMetadata.getTrackName,
+-                  key: ValueKey(currentMetadata.identity),
+-                  textAlign: TextAlign.center,
+-                  style: IpodTypography.menu.copyWith(
++            ),
++          );
++        return SizedBox(
++          key: const ValueKey(SplitScreenType.nowPlaying),
++          width: double.infinity,
++          child: DecoratedBox(
++            decoration: BoxDecoration(
++              gradient: IpodGradients.splitPreviewFor(context),
++            ),
++            child: Padding(
++              padding: const EdgeInsets.all(20),
++              child: Column(
++                children: [
++                  Spacer(flex: (currentMetadata != null) ? 2 : 1),
++                  const Icon(
++                    CupertinoIcons.music_note_2,
++                    size: 65,
+                     color: AppPalette.previewForeground,
+                   ),
+-                ),
+-                const SizedBox(height: 5),
+-                Text(
+-                  currentMetadata.getTrackArtistNames ??
+-                      context.localization.unknownArtist,
+-                  maxLines: 1,
+-                  style: IpodTypography.metadata.copyWith(
+-                    color: AppPalette.previewForeground,
+-                    overflow: TextOverflow.ellipsis,
+-                  ),
+-                ),
+-                const SizedBox(height: 5),
+-                Text(
+-                  currentMetadata.getAlbumName,
+-                  maxLines: 1,
+-                  style: IpodTypography.metadata.copyWith(
+-                    color: AppPalette.previewForeground,
+-                    overflow: TextOverflow.ellipsis,
+-                  ),
+-                ),
+-              ],
+-            ],
++                  const Spacer(),
++                  if (currentMetadata != null) ...[
++                    MarqueeText(
++                      currentMetadata.getTrackName,
++                      key: ValueKey(currentMetadata.identity),
++                      textAlign: TextAlign.center,
++                      style: IpodTypography.menu.copyWith(
++                        color: AppPalette.previewForeground,
++                      ),
++                    ),
++                    const SizedBox(height: 5),
++                    Text(
++                      currentMetadata.getTrackArtistNames ??
++                          context.localization.unknownArtist,
++                      maxLines: 1,
++                      style: IpodTypography.metadata.copyWith(
++                        color: AppPalette.previewForeground,
++                        overflow: TextOverflow.ellipsis,
++                      ),
++                    ),
++                    const SizedBox(height: 5),
++                    Text(
++                      currentMetadata.getAlbumName,
++                      maxLines: 1,
++                      style: IpodTypography.metadata.copyWith(
++                        color: AppPalette.previewForeground,
++                        overflow: TextOverflow.ellipsis,
++                      ),
++                    ),
++                  ],
++                ],
++              ),
++            ),
+           ),
+-        ),
+-      ),
++        );
++      },
+     );
+   }
+ }
+diff --git a/lib/features/menu/widgets/settings_preview_widget.dart b/lib/features/menu/widgets/settings_preview_widget.dart
+index 23b2faf..406fb10 100644
+--- a/lib/features/menu/widgets/settings_preview_widget.dart
++++ b/lib/features/menu/widgets/settings_preview_widget.dart
+@@ -27,7 +27,7 @@ class SettingsPreviewWidget extends StatelessWidget {
+               Align(
+                 alignment: Alignment.topCenter,
+                 child: Text(
+-                  context.localization.appTitle,
++                  'Frankenstein Rewind',
+                   maxLines: 1,
+                   textAlign: TextAlign.center,
+                   style: IpodTypography.title.copyWith(
+diff --git a/lib/features/music/album/providers/album_details_provider.dart b/lib/features/music/album/providers/album_details_provider.dart
+index abea8fe..303487a 100644
+--- a/lib/features/music/album/providers/album_details_provider.dart
++++ b/lib/features/music/album/providers/album_details_provider.dart
+@@ -1,3 +1,4 @@
++import 'package:classipod/features/rewind/rewind_preferences.dart';
+ import 'package:classipod/core/models/music_metadata.dart';
+ import 'package:classipod/core/providers/filtered_audio_files_provider.dart';
+ import 'package:classipod/core/utils/album_order.dart';
+@@ -9,7 +10,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
+ final albumDetailsProvider = Provider<List<AlbumModel>>((ref) {
+   final metadataList =
+       ref.watch(filteredAudioFilesProvider).value ?? <MusicMetadata>[];
+-  return buildAlbumDetails(metadataList);
++  final albums = buildAlbumDetails(metadataList);
++  final sort = rewindPrefs.getString('rewind.albumSort');
++  if (sort == 'Artist' || sort == 'Year') {
++    albums.sort((a, b) {
++      final group = sort == 'Year'
++          ? (a.albumSongs.first.year ?? 9999).compareTo(
++              b.albumSongs.first.year ?? 9999,
++            )
++          : compareNames(a.albumArtistName, b.albumArtistName);
++      return group == 0 ? compareNames(a.albumName, b.albumName) : group;
++    });
++  }
++  return albums;
+ });
+ 
+ final songAlbumArtworkProvider = Provider.autoDispose
+diff --git a/lib/features/music/songs/provider/songs_provider.dart b/lib/features/music/songs/provider/songs_provider.dart
+index b7756e6..3fb1a89 100644
+--- a/lib/features/music/songs/provider/songs_provider.dart
++++ b/lib/features/music/songs/provider/songs_provider.dart
+@@ -1,3 +1,4 @@
++import 'package:classipod/features/rewind/rewind_preferences.dart';
+ import 'package:classipod/core/models/music_metadata.dart';
+ import 'package:classipod/core/providers/filtered_audio_files_provider.dart';
+ import 'package:classipod/core/utils/name_order.dart';
+@@ -8,6 +9,17 @@ final songsProvider = Provider<List<MusicMetadata>>((ref) {
+       (ref.watch(filteredAudioFilesProvider).value ?? <MusicMetadata>[])
+           .toList();
+   metadataList.sort((a, b) {
++    final sort = rewindPrefs.getString('rewind.songSort');
++    final group = switch (sort) {
++      'Artist' => compareNames(
++        a.getTrackArtistNames ?? '',
++        b.getTrackArtistNames ?? '',
++      ),
++      'Album' => compareNames(a.getAlbumName, b.getAlbumName),
++      'Recently added' => b.originalSongIndex.compareTo(a.originalSongIndex),
++      _ => 0,
++    };
++    if (group != 0) return group;
+     final titleComparison = compareNames(a.getTrackName, b.getTrackName);
+     if (titleComparison != 0) return titleComparison;
+ 
+diff --git a/lib/features/now_playing/screen/now_playing_screen.dart b/lib/features/now_playing/screen/now_playing_screen.dart
+index a78f909..acab0f5 100644
+--- a/lib/features/now_playing/screen/now_playing_screen.dart
++++ b/lib/features/now_playing/screen/now_playing_screen.dart
+@@ -1,3 +1,6 @@
++import 'package:classipod/features/rewind/spectrum.dart';
++import 'package:classipod/features/rewind/rewind_preferences.dart';
++
+ import 'dart:async';
+ 
+ import 'package:classipod/core/extensions/build_context_extensions.dart';
+@@ -546,6 +549,20 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
+       child: CupertinoPageScaffold(
+         child: Column(
+           children: [
++            if (rewindPrefs.getBool('Local spectrum') == true &&
++                nowPlayingDetails.currentMetadata?.isOnDevice == true &&
++                nowPlayingDetails.isPlaying)
++              StreamBuilder<int?>(
++                stream: ref
++                    .read(audioPlayerProvider)
++                    .androidAudioSessionIdStream,
++                initialData: ref
++                    .read(audioPlayerProvider)
++                    .androidAudioSessionId,
++                builder: (context, snapshot) => (snapshot.data ?? 0) > 0
++                    ? LocalSpectrum(snapshot.data!)
++                    : const SizedBox.shrink(),
++              ),
+             Row(
+               mainAxisAlignment: MainAxisAlignment.end,
+               children: [
+diff --git a/lib/features/rewind/cover_cache.dart b/lib/features/rewind/cover_cache.dart
+new file mode 100644
+index 0000000..2658197
+--- /dev/null
++++ b/lib/features/rewind/cover_cache.dart
+@@ -0,0 +1,90 @@
++import 'dart:convert';
++import 'dart:io';
++
++import 'package:crypto/crypto.dart';
++import 'package:http/http.dart' as http;
++import 'package:classipod/core/models/music_metadata.dart';
++import 'package:classipod/features/rewind/rewind_preferences.dart';
++
++class CoverCache {
++  final String directory;
++  CoverCache(this.directory);
++  final results = <String, String?>{};
++  final folders = <String, String?>{};
++  Future<String?> find(MusicMetadata song) async {
++    if (song.filePath != null) {
++      final folder = File(song.filePath!).parent.path;
++      if (!folders.containsKey(folder)) {
++        folders[folder] = null;
++        for (final name in [
++          'cover.jpg',
++          'folder.jpg',
++          'Folder.jpg',
++          'cover.png',
++        ]) {
++          final file = File('$folder/$name');
++          if (await file.exists()) {
++            folders[folder] = file.path;
++            break;
++          }
++        }
++      }
++      if (folders[folder] != null) return folders[folder];
++    }
++    final artist = (song.albumArtistName ?? song.getTrackArtistNames ?? '')
++        .trim()
++        .toLowerCase();
++    final album = (song.albumName ?? '').trim().toLowerCase();
++    if (album.isEmpty || artist.isEmpty) return null;
++    final key = sha256.convert(utf8.encode('$artist\n$album')).toString();
++    if (results.containsKey(key)) return results[key];
++    results[key] = null;
++    final file = File('$directory/rewind-$key.jpg');
++    if (await file.exists()) return results[key] = file.path;
++    if (rewindPrefs.getBool('rewind.coverLookup') != true) return null;
++    final attempted = File('$directory/rewind-$key.miss');
++    if (await attempted.exists() &&
++        DateTime.now().difference(await attempted.lastModified()).inDays < 7)
++      return null;
++    try {
++      final search = await http
++          .get(
++            Uri.https('itunes.apple.com', '/search', {
++              'term': '$artist $album',
++              'entity': 'album',
++              'limit': '5',
++            }),
++          )
++          .timeout(const Duration(seconds: 5));
++      if (search.statusCode != 200) return null;
++      for (final row in jsonDecode(search.body)['results']) {
++        if (row['collectionName'].toString().trim().toLowerCase() != album ||
++            row['artistName'].toString().trim().toLowerCase() != artist)
++          continue;
++        final uri = Uri.tryParse(
++          row['artworkUrl100'].toString().replaceFirst(
++            '100x100bb',
++            '300x300bb',
++          ),
++        );
++        if (uri == null ||
++            uri.scheme != 'https' ||
++            !uri.host.endsWith('.mzstatic.com'))
++          continue;
++        final image = await http.get(uri).timeout(const Duration(seconds: 5));
++        if (image.statusCode != 200 ||
++            image.bodyBytes.isEmpty ||
++            image.bodyBytes.length > 2000000)
++          continue;
++        await file.parent.create(recursive: true);
++        final part = File('${file.path}.part');
++        await part.writeAsBytes(image.bodyBytes);
++        await part.rename(file.path);
++        return results[key] = file.path;
++      }
++      await attempted.parent.create(recursive: true);
++      await attempted.writeAsString('');
++    } catch (_) {}
++    return null;
++  }
++}
+diff --git a/lib/features/rewind/network_library.dart b/lib/features/rewind/network_library.dart
+new file mode 100644
+index 0000000..ffa811c
+--- /dev/null
++++ b/lib/features/rewind/network_library.dart
+@@ -0,0 +1,190 @@
++import 'dart:convert';
++import 'dart:io';
++
++import 'package:crypto/crypto.dart';
++import 'package:flutter_secure_storage/flutter_secure_storage.dart';
++import 'package:http/http.dart' as http;
++import 'package:path_provider/path_provider.dart';
++import 'package:smb_connect/smb_connect.dart';
++import 'package:classipod/core/models/music_metadata.dart';
++import 'package:classipod/features/rewind/rewind_preferences.dart';
++
++typedef Entry = ({String title, String id});
++final networkLibrary = NetworkLibrary();
++
++class NetworkLibrary {
++  final vault = const FlutterSecureStorage();
++  SmbConnect? share;
++  String root = '/';
++  final downloads = <String, Future<File>>{};
++  Future<void> configure(String address, String user, String password) async {
++    final uri = Uri.parse(address);
++    if (uri.scheme != 'smb' ||
++        uri.host.isEmpty ||
++        uri.pathSegments.where((s) => s.isNotEmpty).isEmpty ||
++        uri.userInfo.isNotEmpty) {
++      throw FormatException(
++        'Use smb://server/share or smb://server/share/folder.',
++      );
++    }
++    final next = await SmbConnect.connectAuth(
++      host: uri.host,
++      domain: '',
++      username: user,
++      password: password,
++    ).timeout(const Duration(seconds: 12));
++    try {
++      await next.listFiles(await next.file(uri.path));
++    } catch (_) {
++      await next.close();
++      rethrow;
++    }
++    await vault.write(
++      key: 'rewind.smb',
++      value: jsonEncode([address, user, password]),
++    );
++    await share?.close();
++    share = next;
++    root = uri.path;
++  }
++
++  Future<void> open() async {
++    if (share != null) return;
++    final saved = await vault.read(key: 'rewind.smb');
++    if (saved == null)
++      throw StateError('Add your shared folder in Settings  Library.');
++    final data = List<String>.from(jsonDecode(saved));
++    await configure(data[0], data[1], data[2]);
++  }
++
++  Future<List<Entry>> files(String path) async {
++    await open();
++    final folder = path.isEmpty ? root : path;
++    final rows = await share!.listFiles(await share!.file(folder));
++    final entries = <Entry>[
++      for (final f in rows)
++        if (f.name != '.' &&
++            f.name != '..' &&
++            (f.isDirectory() ||
++                RegExp(
++                  r'\.(mp3|flac|m4a|aac|ogg|opus|wav)$',
++                  caseSensitive: false,
++                ).hasMatch(f.name)))
++          (title: f.name, id: (f.isDirectory() ? 'dir:' : 'smbfile:') + f.path),
++    ];
++    entries.sort(
++      (a, b) => a.id.startsWith('dir:') == b.id.startsWith('dir:')
++          ? a.title.toLowerCase().compareTo(b.title.toLowerCase())
++          : a.id.startsWith('dir:')
++          ? -1
++          : 1,
++    );
++    return entries;
++  }
++
++  Future<File> cacheTrack(String path) async {
++    return downloads.putIfAbsent(
++      path,
++      () => _cache(path).whenComplete(() {
++        downloads.remove(path);
++      }),
++    );
++  }
++
++  Future<File> _cache(String path) async {
++    await open();
++    final f = await share!.file(path);
++    final dir = Directory(
++      '${(await getTemporaryDirectory()).path}/rewind-share',
++    );
++    await dir.create(recursive: true);
++    final id = sha256.convert(
++      utf8.encode('${share!.host}/$path:${f.lastModified}:${f.size}'),
++    );
++    final file = File('${dir.path}/$id.${path.split('.').last}');
++    if (await file.exists() && await file.length() == f.size) return file;
++    final part = File('${file.path}.part');
++    try {
++      await (await share!.openRead(f)).cast<List<int>>().pipe(part.openWrite());
++      if (await part.length() != f.size)
++        throw StateError(
++          'Incomplete network transfer. Retry on your home network.',
++        );
++      return await part.rename(file.path);
++    } finally {
++      if (await part.exists()) await part.delete();
++    }
++  }
++
++  List<Entry> get favorites {
++    final map =
++        jsonDecode(rewindPrefs.getString('rewind.stations') ?? '{}') as Map;
++    return [
++      for (final e in map.entries)
++        (title: e.value as String, id: e.key as String),
++    ];
++  }
++
++  Future<void> favorite(Entry e, bool add) async {
++    final map = {for (final f in favorites) f.id: f.title};
++    if (add) {
++      map[e.id] = e.title;
++    } else {
++      map.remove(e.id);
++    }
++    await rewindPrefs.setString('rewind.stations', jsonEncode(map));
++  }
++
++  Future<List<Entry>> stations({String? country, String? query}) async {
++    for (final host in [
++      'de1.api.radio-browser.info',
++      'at1.api.radio-browser.info',
++      'nl1.api.radio-browser.info',
++    ]) {
++      try {
++        final uri = Uri.https(host, '/json/stations/search', {
++          'hidebroken': 'true',
++          'limit': '80',
++          'order': 'votes',
++          'reverse': 'true',
++          if (country != null) 'countrycode': country,
++          if (query != null) 'name': query,
++        });
++        final response = await http
++            .get(uri, headers: {'User-Agent': 'FrankensteinRewind/0.2'})
++            .timeout(const Duration(seconds: 6));
++        if (response.statusCode != 200) continue;
++        final list = jsonDecode(utf8.decode(response.bodyBytes)) as List;
++        return [
++          for (final row in list)
++            if (validStream(row['url_resolved']))
++              (
++                title: row['name'].toString().trim(),
++                id: row['url_resolved'] as String,
++              ),
++        ];
++      } catch (_) {
++        continue;
++      }
++    }
++    throw StateError(
++      'Station directory unavailable. Favorites and custom stations are still available.',
++    );
++  }
++
++  bool validStream(dynamic url) {
++    final uri = url is String ? Uri.tryParse(url) : null;
++    return uri != null &&
++        ['https', 'http'].contains(uri.scheme) &&
++        uri.host.isNotEmpty;
++  }
++
++  MusicMetadata item(Entry entry, int index) => MusicMetadata(
++    songId: entry.id,
++    filePath: entry.id,
++    trackName: entry.title,
++    albumName: entry.id.startsWith('smbfile:') ? 'Home Server' : 'Radio',
++    originalSongIndex: index,
++    isOnDevice: false,
++  );
++}
 diff --git a/lib/features/rewind/rewind_preferences.dart b/lib/features/rewind/rewind_preferences.dart
 new file mode 100644
-index 0000000..ef5b233
+index 0000000..8d50463
 --- /dev/null
 +++ b/lib/features/rewind/rewind_preferences.dart
-@@ -0,0 +1,30 @@
+@@ -0,0 +1,32 @@
 +import 'dart:convert';
 +
 +import 'package:flutter/foundation.dart';
@@ -474,12 +1488,22 @@ index 0000000..ef5b233
 +  }
 +  rewindPins.value = next;
 +}
++
++final rewindAppearance = ValueNotifier<int>(0);
 diff --git a/lib/features/rewind/rewind_screen.dart b/lib/features/rewind/rewind_screen.dart
 new file mode 100644
-index 0000000..b9867a8
+index 0000000..1b641c8
 --- /dev/null
 +++ b/lib/features/rewind/rewind_screen.dart
-@@ -0,0 +1,518 @@
+@@ -0,0 +1,709 @@
++import 'package:permission_handler/permission_handler.dart';
++import 'package:classipod/core/extensions/build_context_extensions.dart';
++import 'package:classipod/core/services/audio_player_service.dart';
++import 'package:classipod/features/now_playing/models/now_playing_model.dart';
++
++import 'network_library.dart';
++import 'spotify_session.dart';
++
 +import 'dart:async';
 +import 'dart:convert';
 +import 'dart:typed_data';
@@ -503,22 +1527,19 @@ index 0000000..b9867a8
 +  ConsumerState<RewindScreen> createState() => _RewindState();
 +}
 +
-+typedef Entry = ({String title, String id});
-+
 +class _RewindState extends ConsumerState<RewindScreen> with CustomScreen {
 +  String section = 'Spotify';
 +  String message = '';
-+  String token = '';
-+  String track = '';
-+  String artist = '';
-+  String trackUri = '';
-+  Future<Uint8List?>? art;
-+  bool paused = true;
++  String get track => spotify.track;
++  String get trackUri => spotify.uri;
++  String get artist => spotify.artist;
++  bool get paused => spotify.paused;
++  Future<Uint8List?>? get art => spotify.art;
 +  bool busy = false;
-+  bool connected = false;
++  final folders = <String>[];
 +  String? nextPage;
 +  List<Entry> library = [];
-+  StreamSubscription<dynamic>? subscription;
++
 +  final client = http.Client();
 +  static const redirect = 'frankensteinrewind://auth';
 +  static const rowHeight = 34.0;
@@ -527,6 +1548,38 @@ index 0000000..b9867a8
 +  String get routeName => Routes.rewind.name;
 +  @override
 +  List<Entry> get displayItems {
++    if (section == 'Experimental')
++      return [
++        for (final key in ['Liquid Glass', 'S10 Edge', 'Local spectrum'])
++          (
++            title: '$key ? ${rewindPrefs.getBool(key) == true ? 'On' : 'Off'}',
++            id: 'option:$key',
++          ),
++      ];
++    if (section == 'Spotify setup')
++      return [
++        (
++          title: (rewindPrefs.getString('rewind.client') ?? '').isEmpty
++              ? 'Add client ID'
++              : 'Change client ID',
++          id: 'setup',
++        ),
++        (title: 'Connect Spotify', id: 'authorize'),
++        (title: 'Disconnect', id: 'disconnect'),
++      ];
++    if (section == 'Shared folder setup')
++      return [
++        (title: 'Add or change shared folder', id: 'configure-share'),
++        (title: 'Browse shared folder', id: 'browse-share'),
++      ];
++    if (section == 'Radio')
++      return [
++        (title: 'Suriname', id: 'suriname'),
++        (title: 'Browse by country', id: 'country'),
++        (title: 'Search stations', id: 'search'),
++        (title: 'Favorites', id: 'favorites'),
++        (title: 'Add stream URL', id: 'stream'),
++      ];
 +    if (section == 'Spotify') {
 +      return [
 +        for (final pin in rewindPins.value.entries)
@@ -539,7 +1592,6 @@ index 0000000..b9867a8
 +          id: 'night',
 +        ),
 +        (title: 'Pin playlist link', id: 'pin-link'),
-+        (title: 'Spotify setup', id: 'setup'),
 +      ];
 +    }
 +    if (section == 'Now Playing') {
@@ -554,18 +1606,63 @@ index 0000000..b9867a8
 +  @override
 +  void initState() {
 +    super.initState();
-+    if (widget.initialUri != null) {
-+      WidgetsBinding.instance.addPostFrameCallback(
-+        (_) => run(() => play(widget.initialUri!)),
-+      );
++    spotify.addListener(refresh);
++    final initial = widget.initialUri;
++    if (initial != null) {
++      if (initial.startsWith('spotify:')) {
++        WidgetsBinding.instance.addPostFrameCallback(
++          (_) => run(() => play(initial)),
++        );
++      } else {
++        section = initial;
++        if (initial == 'Home Server')
++          WidgetsBinding.instance.addPostFrameCallback(
++            (_) => run(() => browseShare('')),
++          );
++        if (initial == 'Now Playing')
++          WidgetsBinding.instance.addPostFrameCallback((_) => run(connect));
++      }
 +    }
 +  }
 +
 +  @override
 +  void dispose() {
-+    subscription?.cancel();
++    spotify.removeListener(refresh);
 +    client.close();
 +    super.dispose();
++  }
++
++  void refresh() {
++    if (mounted) setState(() {});
++  }
++
++  Future<void> browseShare(String path) async {
++    final items = await networkLibrary.files(path);
++    page('Home Server');
++    library = items;
++  }
++
++  Future<void> networkPlay(Entry selected) async {
++    final entries = selected.id.startsWith('smbfile:')
++        ? library.where((e) => e.id.startsWith('smbfile:')).toList()
++        : [selected];
++    final service = ref.read(audioPlayerServiceProvider.notifier);
++    if (spotify.active && !spotify.paused) await SpotifySdk.pause();
++    spotify.selectLocal();
++    await service.setAudioSource(
++      preload: false,
++      musicMetadataList: [
++        for (var i = 0; i < entries.length; i++)
++          networkLibrary.item(entries[i], i),
++      ],
++      nowPlayingType: NowPlayingType.playlist,
++    );
++    await service.playSongAtIndex(entries.indexOf(selected));
++    if (mounted)
++      await context.pushNamed(
++        Routes.nowPlaying.name,
++        extra: Routes.rewind.name,
++      );
 +  }
 +
 +  Future<void> run(Future<void> Function() action) async {
@@ -583,7 +1680,11 @@ index 0000000..b9867a8
 +    }
 +  }
 +
-+  Future<String?> prompt(String title, String initial) async {
++  Future<String?> prompt(
++    String title,
++    String initial, {
++    bool secret = false,
++  }) async {
 +    var value = initial;
 +    return showCupertinoDialog<String>(
 +      context: context,
@@ -591,8 +1692,9 @@ index 0000000..b9867a8
 +        title: Text(title),
 +        content: CupertinoTextFormFieldRow(
 +          initialValue: initial,
++          obscureText: secret,
 +          autocorrect: false,
-+          onChanged: (s) => value = s.trim(),
++          onChanged: (s) => value = secret ? s : s.trim(),
 +        ),
 +        actions: [
 +          CupertinoDialogAction(
@@ -615,61 +1717,17 @@ index 0000000..b9867a8
 +    if (!RegExp(r'^[a-fA-F0-9]{32}$').hasMatch(value))
 +      throw StateError('Enter the 32-character public client ID.');
 +    if (value != old) {
-+      await subscription?.cancel();
-+      if (connected) await SpotifySdk.disconnect();
-+      connected = false;
-+      token = '';
++      await spotify.reset(old);
 +    }
 +    await rewindPrefs.setString('rewind.client', value);
 +    return true;
 +  }
 +
-+  Future<void> connect({bool libraryAccess = false}) async {
-+    var id = rewindPrefs.getString('rewind.client') ?? '';
-+    if (id.isEmpty) {
-+      if (!await setup()) throw StateError('Spotify setup cancelled.');
-+      id = rewindPrefs.getString('rewind.client')!;
-+    }
-+    if (libraryAccess && token.isEmpty) {
-+      token = await SpotifySdk.getAccessToken(
-+        clientId: id,
-+        redirectUrl: redirect,
-+        scope: 'app-remote-control,user-library-read,playlist-read-private,playlist-read-collaborative',
-+      );
-+    }
-+    if (connected) return;
-+    connected = await SpotifySdk.connectToSpotifyRemote(
-+      clientId: id,
-+      redirectUrl: redirect,
-+    );
-+    if (!connected) throw StateError('Open Spotify, sign in, then retry.');
-+    await subscription?.cancel();
-+    subscription = SpotifySdk.subscribePlayerState().listen(
-+      (state) {
-+        if (!mounted) return;
-+        setState(() {
-+          paused = state.isPaused;
-+          track = state.track?.name ?? '';
-+          artist = state.track?.artist.name ?? '';
-+          final uri = state.track?.uri ?? '';
-+          if (uri != trackUri) {
-+            final image = state.track?.imageUri;
-+            art = image == null ? null : SpotifySdk.getImage(imageUri: image);
-+          }
-+          trackUri = uri;
-+        });
-+      },
-+      onError: (Object e) {
-+        if (mounted)
-+          setState(() {
-+            connected = false;
-+            message = e.toString();
-+          });
-+      },
-+      onDone: () {
-+        connected = false;
-+      },
-+    );
++  String get clientId => rewindPrefs.getString('rewind.client') ?? '';
++  Future<void> connect() async {
++    if (clientId.isEmpty)
++      throw StateError('Open Settings  Library  Spotify setup to connect.');
++    await spotify.connect(clientId);
 +  }
 +
 +  void page(String name) {
@@ -684,12 +1742,16 @@ index 0000000..b9867a8
 +
 +  Future<void> play(String uri) async {
 +    await connect();
++    await ref.read(audioPlayerServiceProvider.notifier).pause();
 +    await SpotifySdk.play(spotifyUri: uri);
++    spotify.active = true;
 +    page('Now Playing');
 +  }
 +
 +  Future<void> fetchLibrary(String name, {bool more = false}) async {
-+    await connect(libraryAccess: true);
++    if (clientId.isEmpty)
++      throw StateError('Open Settings  Library  Spotify setup.');
++    var token = await spotify.token(clientId);
 +    final liked = name == 'Liked Songs';
 +    final endpoint = Uri.parse(
 +      more
@@ -698,10 +1760,15 @@ index 0000000..b9867a8
 +    );
 +    if (endpoint.scheme != 'https' || endpoint.host != 'api.spotify.com')
 +      throw StateError('Unexpected Spotify endpoint.');
-+    final response = await client
++    var response = await client
 +        .get(endpoint, headers: {'Authorization': 'Bearer $token'})
 +        .timeout(const Duration(seconds: 20));
-+    if (response.statusCode == 401) token = '';
++    if (response.statusCode == 401) {
++      token = await spotify.token(clientId, renew: true);
++      response = await client
++          .get(endpoint, headers: {'Authorization': 'Bearer $token'})
++          .timeout(const Duration(seconds: 20));
++    }
 +    if (response.statusCode != 200)
 +      throw StateError(
 +        'Spotify library request returned ${response.statusCode}. Check account access and retry.',
@@ -729,6 +1796,10 @@ index 0000000..b9867a8
 +  }
 +
 +  Future<void> toggle() async {
++    if (widget.initialUri == 'Radio' || widget.initialUri == 'Home Server') {
++      await ref.read(audioPlayerServiceProvider.notifier).togglePlayback();
++      return;
++    }
 +    await connect();
 +    final state = await SpotifySdk.getPlayerState();
 +    if (state == null) throw StateError('Spotify player is unavailable.');
@@ -740,7 +1811,92 @@ index 0000000..b9867a8
 +  }
 +
 +  Future<void> choose(Entry entry) async {
++    final id = entry.id;
++    if (id.startsWith('option:')) {
++      final key = id.substring(7);
++      if (key == 'Local spectrum' &&
++          rewindPrefs.getBool(key) != true &&
++          !(await Permission.microphone.request()).isGranted)
++        throw StateError(
++          'Android needs audio permission to show the local spectrum.',
++        );
++      await rewindPrefs.setBool(key, !(rewindPrefs.getBool(key) ?? false));
++      rewindAppearance.value++;
++      refresh();
++      return;
++    }
++    if (id.startsWith('dir:')) {
++      await browseShare(id.substring(4));
++      folders.add(id.substring(4));
++      return;
++    }
++    if (id.startsWith('smbfile:') || networkLibrary.validStream(id)) {
++      await networkPlay(entry);
++      return;
++    }
++    if (section == 'Liked Songs' && id.startsWith('spotify:track:')) {
++      await connect();
++      await ref.read(audioPlayerServiceProvider.notifier).pause();
++      await SpotifySdk.play(spotifyUri: id);
++      spotify.active = true;
++      final following = library.skip(library.indexOf(entry) + 1).toList();
++      page('Now Playing');
++      for (final next in following) {
++        await SpotifySdk.queue(spotifyUri: next.id);
++      }
++      return;
++    }
 +    switch (entry.id) {
++      case 'authorize':
++        await connect();
++        message = 'Connected';
++      case 'disconnect':
++        await spotify.reset(clientId);
++        message = 'Disconnected';
++      case 'configure-share':
++        final address = await prompt('Shared folder address', 'smb://');
++        if (address == null) return;
++        final user = await prompt('Username (blank for guest)', '');
++        if (user == null) return;
++        final password = await prompt('Password', '', secret: true);
++        if (password == null) return;
++        await networkLibrary.configure(address, user, password);
++        message = 'Connected';
++      case 'browse-share':
++        await browseShare('');
++      case 'suriname':
++        final items = await networkLibrary.stations(country: 'SR');
++        page('Suriname');
++        library = items;
++      case 'country':
++        final code = await prompt('Two-letter country code (SR, US, NL)', '');
++        if (code == null) return;
++        if (!RegExp(r'^[A-Za-z]{2}$').hasMatch(code))
++          throw FormatException('Enter two letters.');
++        final items = await networkLibrary.stations(
++          country: code.toUpperCase(),
++        );
++        page(code.toUpperCase());
++        library = items;
++      case 'search':
++        final name = await prompt('Station name', '');
++        if (name == null) return;
++        final items = await networkLibrary.stations(query: name);
++        page('Stations');
++        library = items;
++      case 'favorites':
++        page('Favorites');
++        library = networkLibrary.favorites;
++      case 'stream':
++        final url = await prompt('Stream URL', 'https://');
++        if (url == null) return;
++        if (!networkLibrary.validStream(url))
++          throw FormatException('Enter an HTTP or HTTPS stream.');
++        final name = await prompt('Station name', '');
++        if (name == null || name.isEmpty) return;
++        await networkLibrary.favorite((title: name, id: url), true);
++        page('Favorites');
++        library = networkLibrary.favorites;
 +      case 'night':
 +        final next = !rewindNight.value;
 +        await rewindPrefs.setBool('rewind.night', next);
@@ -783,6 +1939,13 @@ index 0000000..b9867a8
 +  }
 +
 +  Future<void> hold(Entry entry) async {
++    if (networkLibrary.validStream(entry.id)) {
++      final add = !networkLibrary.favorites.any((s) => s.id == entry.id);
++      await networkLibrary.favorite(entry, add);
++      if (section == 'Favorites') library = networkLibrary.favorites;
++      message = add ? 'Station saved' : 'Station removed';
++      return;
++    }
 +    final pin = entry.id.startsWith('spotify:playlist:');
 +    if (!pin && !entry.id.startsWith('spotify:track:')) return;
 +    final saved = rewindPins.value.containsKey(entry.id);
@@ -832,7 +1995,18 @@ index 0000000..b9867a8
 +  @override
 +  void onMenuButtonPressed() {
 +    if (busy) return;
-+    if (section == 'Spotify') {
++    if (section == 'Home Server' && folders.isNotEmpty) {
++      folders.removeLast();
++      run(() => browseShare(folders.isEmpty ? '' : folders.last));
++      return;
++    }
++    if (widget.initialUri == 'Radio' && section != 'Radio') {
++      page('Radio');
++      return;
++    }
++    if (section == 'Spotify' ||
++        section == widget.initialUri ||
++        widget.initialUri == 'Shared folder setup') {
 +      context.pop();
 +    } else {
 +      page('Spotify');
@@ -853,11 +2027,19 @@ index 0000000..b9867a8
 +
 +  @override
 +  Future<void> seekForward() => run(() async {
++    if (widget.initialUri == 'Radio' || widget.initialUri == 'Home Server') {
++      await ref.read(audioPlayerServiceProvider.notifier).nextSong();
++      return;
++    }
 +    await connect();
 +    await SpotifySdk.skipNext();
 +  });
 +  @override
 +  Future<void> seekBackward() => run(() async {
++    if (widget.initialUri == 'Radio' || widget.initialUri == 'Home Server') {
++      await ref.read(audioPlayerServiceProvider.notifier).seekBackwards();
++      return;
++    }
 +    await connect();
 +    await SpotifySdk.skipPrevious();
 +  });
@@ -899,8 +2081,8 @@ index 0000000..b9867a8
 +  @override
 +  Widget build(BuildContext context) {
 +    final night = rewindNight.value;
-+    final ink = night ? const Color(0xffefb26e) : const Color(0xff182027);
-+    final paper = night ? const Color(0xff151515) : const Color(0xfff8f9fa);
++    final ink = night ? const Color(0xffefb26e) : context.appPrimaryTextColor;
++    final paper = night ? const Color(0xff151515) : context.appBackgroundColor;
 +    final rows = displayItems;
 +    return ColoredBox(
 +      color: paper,
@@ -953,6 +2135,31 @@ index 0000000..b9867a8
 +                  ],
 +                ),
 +              ),
++            if (section == 'Now Playing')
++              StreamBuilder<int>(
++                stream: paused
++                    ? null
++                    : Stream.periodic(const Duration(seconds: 1), (i) => i),
++                builder: (context, _) => Padding(
++                  padding: const EdgeInsets.symmetric(
++                    horizontal: 8,
++                    vertical: 3,
++                  ),
++                  child: Align(
++                    alignment: Alignment.centerLeft,
++                    child: FractionallySizedBox(
++                      widthFactor: spotify.progress,
++                      child: ColoredBox(
++                        color: ink,
++                        child: const SizedBox(
++                          height: 3,
++                          width: double.infinity,
++                        ),
++                      ),
++                    ),
++                  ),
++                ),
++              ),
 +            if (busy || message.isNotEmpty)
 +              Padding(
 +                padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -998,6 +2205,394 @@ index 0000000..b9867a8
 +    );
 +  }
 +}
+diff --git a/lib/features/rewind/spectrum.dart b/lib/features/rewind/spectrum.dart
+new file mode 100644
+index 0000000..69e84fe
+--- /dev/null
++++ b/lib/features/rewind/spectrum.dart
+@@ -0,0 +1,76 @@
++import 'dart:async';
++
++import 'package:flutter/cupertino.dart';
++import 'package:flutter/services.dart';
++import 'package:permission_handler/permission_handler.dart';
++
++class LocalSpectrum extends StatefulWidget {
++  final int session;
++  const LocalSpectrum(this.session, {super.key});
++  @override
++  State<LocalSpectrum> createState() => _SpectrumState();
++}
++
++class _SpectrumState extends State<LocalSpectrum> {
++  static const channel = EventChannel('frankensteinrewind/spectrum');
++  StreamSubscription<dynamic>? sub;
++  List<int> bars = [];
++  @override
++  void initState() {
++    super.initState();
++    listen();
++  }
++
++  @override
++  void didUpdateWidget(LocalSpectrum old) {
++    super.didUpdateWidget(old);
++    if (old.session != widget.session) listen();
++  }
++
++  Future<void> listen() async {
++    final id = widget.session;
++    await sub?.cancel();
++    if (!mounted ||
++        id != widget.session ||
++        !await Permission.microphone.isGranted ||
++        !mounted ||
++        id != widget.session)
++      return;
++    sub = channel
++        .receiveBroadcastStream(id)
++        .listen(
++          (data) {
++            if (mounted) setState(() => bars = List<int>.from(data));
++          },
++          onError: (Object _) {
++            if (mounted) setState(() => bars = []);
++          },
++        );
++  }
++
++  @override
++  void dispose() {
++    sub?.cancel();
++    super.dispose();
++  }
++
++  @override
++  Widget build(BuildContext context) => SizedBox(
++    height: 18,
++    child: Row(
++      crossAxisAlignment: CrossAxisAlignment.end,
++      children: [
++        for (final b in bars)
++          Expanded(
++            child: Padding(
++              padding: const EdgeInsets.symmetric(horizontal: 1),
++              child: ColoredBox(
++                color: CupertinoColors.activeGreen,
++                child: SizedBox(height: 1 + 17 * b / 100),
++              ),
++            ),
++          ),
++      ],
++    ),
++  );
++}
+diff --git a/lib/features/rewind/spotify_session.dart b/lib/features/rewind/spotify_session.dart
+new file mode 100644
+index 0000000..371450d
+--- /dev/null
++++ b/lib/features/rewind/spotify_session.dart
+@@ -0,0 +1,112 @@
++import 'dart:async';
++import 'dart:typed_data';
++
++import 'package:flutter/foundation.dart';
++import 'package:flutter_secure_storage/flutter_secure_storage.dart';
++import 'package:spotify_sdk/spotify_sdk.dart';
++import 'package:classipod/features/rewind/rewind_preferences.dart';
++
++final spotify = SpotifySession();
++
++class SpotifySession extends ChangeNotifier {
++  static const redirect = 'frankensteinrewind://auth';
++  final storage = const FlutterSecureStorage();
++  int position = 0, duration = 0;
++  DateTime sampled = DateTime.now();
++  double get progress => duration <= 0
++      ? 0
++      : ((position +
++                    (paused
++                        ? 0
++                        : DateTime.now().difference(sampled).inMilliseconds)) /
++                duration)
++            .clamp(0.0, 1.0);
++  String track = '', artist = '', uri = '';
++  bool paused = true, active = false, connected = false;
++  Future<Uint8List?>? art;
++  StreamSubscription<dynamic>? subscription;
++  Future<void>? pending;
++
++  Future<String> token(String id, {bool renew = false}) async {
++    final key = 'rewind.spotify.$id';
++    if (!renew) {
++      final saved = await storage.read(key: key);
++      if (saved != null && saved.isNotEmpty) return saved;
++    }
++    final fresh = await SpotifySdk.getAccessToken(
++      clientId: id,
++      redirectUrl: redirect,
++      scope: 'app-remote-control,user-library-read,playlist-read-private,playlist-read-collaborative',
++    );
++    await storage.write(key: key, value: fresh);
++    return fresh;
++  }
++
++  Future<void> connect(String id) async {
++    if (connected) {
++      try {
++        if (await SpotifySdk.getPlayerState() != null) return;
++      } catch (_) {}
++      connected = false;
++    }
++    await (pending ??= _open(id).whenComplete(() => pending = null));
++  }
++
++  Future<void> _open(String id) async {
++    await subscription?.cancel();
++    connected = await SpotifySdk.connectToSpotifyRemote(
++      clientId: id,
++      redirectUrl: redirect,
++    );
++    if (!connected) throw StateError('Open Spotify and sign in, then retry.');
++    subscription = SpotifySdk.subscribePlayerState().listen(
++      (state) {
++        final song = state.track;
++        if (uri != (song?.uri ?? '')) {
++          final image = song?.imageUri;
++          art = image == null
++              ? null
++              : SpotifySdk.getImage(imageUri: image).catchError((_) => null);
++        }
++        uri = song?.uri ?? '';
++        track = song?.name ?? '';
++        artist = song?.artist.name ?? '';
++        position = state.playbackPosition;
++        duration = song?.duration ?? 0;
++        sampled = DateTime.now();
++        paused = state.isPaused;
++        if (!paused && uri.isNotEmpty) active = true;
++        notifyListeners();
++      },
++      onError: (Object _) {
++        connected = false;
++        notifyListeners();
++      },
++      onDone: () {
++        connected = false;
++        notifyListeners();
++      },
++    );
++  }
++
++  void selectLocal() {
++    if (active) {
++      active = false;
++      notifyListeners();
++    }
++  }
++
++  Future<void> reset(String old) async {
++    await subscription?.cancel();
++    if (connected) await SpotifySdk.disconnect();
++    await storage.delete(key: 'rewind.spotify.$old');
++    connected = false;
++    active = false;
++    track = '';
++    artist = '';
++    uri = '';
++    art = null;
++    await rewindPrefs.remove('rewind.client');
++    notifyListeners();
++  }
++}
+diff --git a/lib/features/settings/screens/about_screen.dart b/lib/features/settings/screens/about_screen.dart
+index f0cdc83..53026b8 100644
+--- a/lib/features/settings/screens/about_screen.dart
++++ b/lib/features/settings/screens/about_screen.dart
+@@ -33,7 +33,7 @@ class AboutScreen extends ConsumerWidget {
+             child: Column(
+               children: [
+                 Text(
+-                  context.localization.appTitle,
++                  'Frankenstein Rewind',
+                   style: CupertinoTheme.of(context).textTheme.textStyle
+                       .copyWith(
+                         fontSize: 20,
+@@ -57,11 +57,11 @@ class AboutScreen extends ConsumerWidget {
+                 ),
+                 AboutListTile(
+                   titleText: context.localization.versionAboutScreenTitle,
+-                  valueText: "2.1.0",
++                  valueText: "0.2.0 alpha",
+                 ),
+                 AboutListTile(
+                   titleText: context.localization.madeWithLoveTitle,
+-                  valueText: "Aditya",
++                  valueText: "Shivam-M98S",
+                 ),
+               ],
+             ),
+diff --git a/lib/features/settings/screens/library_settings_screen.dart b/lib/features/settings/screens/library_settings_screen.dart
+index 1c59ee0..68aac84 100644
+--- a/lib/features/settings/screens/library_settings_screen.dart
++++ b/lib/features/settings/screens/library_settings_screen.dart
+@@ -1,4 +1,7 @@
++import 'package:classipod/features/music/album/providers/album_details_provider.dart';
++import 'package:classipod/features/rewind/rewind_preferences.dart';
+ import 'package:classipod/core/alerts/dialogs.dart';
++import 'package:classipod/features/music/songs/provider/songs_provider.dart';
+ import 'package:classipod/core/extensions/build_context_extensions.dart';
+ import 'package:classipod/core/extensions/go_router_extensions.dart';
+ import 'package:classipod/core/navigation/routes.dart';
+@@ -18,6 +21,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
+ import 'package:go_router/go_router.dart';
+ 
+ enum _LibrarySettingsItems {
++  artwork,
++  albumSort,
++  songSort,
++  spotifySetup,
++  smb,
+   subsonic,
+   configureSubsonic,
+   hideLocalMusic,
+@@ -28,7 +36,15 @@ enum _LibrarySettingsItems {
+   excludeDirectories;
+ 
+   String title(BuildContext context) => switch (this) {
+-    subsonic => context.localization.subsonicTitle,
++    artwork =>
++      "Download missing covers - ${rewindPrefs.getBool('rewind.coverLookup') == true ? 'On' : 'Off'}",
++    albumSort =>
++      "Sort albums - ${rewindPrefs.getString('rewind.albumSort') ?? 'Title'}",
++    songSort =>
++      'Sort songs � ${rewindPrefs.getString('rewind.songSort') ?? 'Title'}',
++    spotifySetup => 'Spotify setup',
++    smb => 'Shared folder (SMB)',
++    subsonic => 'Music server (Subsonic)',
+     preventDuplicateTracks => context.localization.preventDuplicateTracksTitle,
+     hideLocalMusic => context.localization.hideLocalMusicTitle,
+     missingTracks => context.localization.missingTracksTitle,
+@@ -39,6 +55,11 @@ enum _LibrarySettingsItems {
+   };
+ 
+   SplitScreenType get preview => switch (this) {
++    artwork ||
++    albumSort ||
++    songSort ||
++    spotifySetup ||
++    smb => SplitScreenType.settings,
+     subsonic || configureSubsonic => SplitScreenType.subsonic,
+     hideLocalMusic => SplitScreenType.hideLocalMusic,
+     preventDuplicateTracks => SplitScreenType.preventDuplicateTracks,
+@@ -83,6 +104,44 @@ class _LibrarySettingsScreenState extends ConsumerState<LibrarySettingsScreen>
+     try {
+       setState(() => selectedDisplayItem = displayItems.indexOf(item));
+       switch (item) {
++        case _LibrarySettingsItems.artwork:
++          final enabled = !(rewindPrefs.getBool('rewind.coverLookup') ?? false);
++          await rewindPrefs.setBool('rewind.coverLookup', enabled);
++          if (enabled)
++            await ref
++                .read(settingsPreferencesControllerProvider.notifier)
++                .refreshLibrary();
++          if (mounted) setState(() {});
++          break;
++        case _LibrarySettingsItems.albumSort:
++          const order = ['Title', 'Artist', 'Year'];
++          final cur = rewindPrefs.getString('rewind.albumSort') ?? 'Title';
++          await rewindPrefs.setString(
++            'rewind.albumSort',
++            order[(order.indexOf(cur) + 1) % order.length],
++          );
++          ref.invalidate(albumDetailsProvider);
++          if (mounted) setState(() {});
++          break;
++        case _LibrarySettingsItems.songSort:
++          const order = ['Title', 'Artist', 'Album', 'Recently added'];
++          final current = rewindPrefs.getString('rewind.songSort') ?? 'Title';
++          await rewindPrefs.setString(
++            'rewind.songSort',
++            order[(order.indexOf(current) + 1) % order.length],
++          );
++          ref.invalidate(songsProvider);
++          if (mounted) setState(() {});
++          break;
++        case _LibrarySettingsItems.spotifySetup:
++          await context.pushNamed(Routes.rewind.name, extra: 'Spotify setup');
++          break;
++        case _LibrarySettingsItems.smb:
++          await context.pushNamed(
++            Routes.rewind.name,
++            extra: 'Shared folder setup',
++          );
++          break;
+         case _LibrarySettingsItems.subsonic:
+           final controller = ref.read(subsonicControllerProvider.notifier);
+           final enabled =
+diff --git a/lib/features/settings/screens/settings_preferences_screen.dart b/lib/features/settings/screens/settings_preferences_screen.dart
+index d0aee6e..8bdd0d3 100644
+--- a/lib/features/settings/screens/settings_preferences_screen.dart
++++ b/lib/features/settings/screens/settings_preferences_screen.dart
+@@ -1,4 +1,3 @@
+-import 'package:classipod/core/constants/constants.dart';
+ import 'package:classipod/core/extensions/build_context_extensions.dart';
+ import 'package:classipod/core/extensions/go_router_extensions.dart';
+ import 'package:classipod/core/navigation/routes.dart';
+@@ -13,7 +12,6 @@ import 'package:classipod/features/settings/widgets/settings_list_tile.dart';
+ import 'package:cupertino_ui/cupertino_ui.dart';
+ import 'package:flutter_riverpod/flutter_riverpod.dart';
+ import 'package:go_router/go_router.dart';
+-import 'package:url_launcher/url_launcher.dart';
+ 
+ enum _SettingsDisplayItems {
+   about,
+@@ -34,7 +32,7 @@ enum _SettingsDisplayItems {
+   showAppTutorial,
+   librarySettings,
+   resetSettings,
+-  donate;
++  experimental;
+ 
+   String title(BuildContext context) {
+     switch (this) {
+@@ -74,8 +72,8 @@ enum _SettingsDisplayItems {
+         return context.localization.librarySettingsScreenTitle;
+       case resetSettings:
+         return context.localization.resetSettingsTitle;
+-      case donate:
+-        return context.localization.donateSettingTitle;
++      case experimental:
++        return 'Experimental';
+     }
+   }
+ }
+@@ -182,11 +180,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
+             .read(settingsPreferencesControllerProvider.notifier)
+             .resetSettings();
+         break;
+-      case _SettingsDisplayItems.donate:
+-        await launchUrl(
+-          Uri.parse(Constants.donationLinkUrl),
+-          mode: LaunchMode.externalApplication,
+-        );
++      case _SettingsDisplayItems.experimental:
++        await context.pushNamed(Routes.rewind.name, extra: 'Experimental');
+         break;
+     }
+   }
+@@ -313,9 +308,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
+         ref.read(splitScreenControllerProvider.notifier).changeSplitScreenType =
+             SplitScreenType.resetSettings;
+         break;
+-      case _SettingsDisplayItems.donate:
++      case _SettingsDisplayItems.experimental:
+         ref.read(splitScreenControllerProvider.notifier).changeSplitScreenType =
+-            SplitScreenType.donate;
++            SplitScreenType.settings;
+         break;
+       default:
+         ref.read(splitScreenControllerProvider.notifier).changeSplitScreenType =
 diff --git a/lib/main.dart b/lib/main.dart
 index 33a4760..6785f1e 100644
 --- a/lib/main.dart
@@ -1018,11 +2613,41 @@ index 33a4760..6785f1e 100644
    SystemChrome.setSystemUIOverlayStyle(
      const SystemUiOverlayStyle(
        systemNavigationBarColor: AppPalette.transparentColor,
+diff --git a/lib/main_development.dart b/lib/main_development.dart
+index 9f9d188..71cebd7 100644
+--- a/lib/main_development.dart
++++ b/lib/main_development.dart
+@@ -58,7 +58,7 @@ class DevelopmentClassipodApp extends ConsumerWidget {
+     return CupertinoApp.router(
+       locale: Locale(languageLocaleCode),
+       builder: DevicePreview.appBuilder,
+-      onGenerateTitle: (context) => context.localization.appTitle,
++      onGenerateTitle: (context) => 'Frankenstein Rewind',
+       localizationsDelegates: AppLocalizations.localizationsDelegates,
+       supportedLocales: AppLocalizations.supportedLocales,
+       showPerformanceOverlay: debuggerTools.showPerformanceOverlay,
 diff --git a/pubspec.yaml b/pubspec.yaml
-index 1c1a7ec..af20468 100644
+index 1c1a7ec..02f1c09 100644
 --- a/pubspec.yaml
 +++ b/pubspec.yaml
-@@ -53,6 +53,7 @@ dependencies:
+@@ -3,7 +3,7 @@ description: "An iPod Classic-inspired player for local music and Subsonic/Navid
+ 
+ publish_to: 'none'
+ 
+-version: 2.1.0+27
++version: 0.2.0+28
+ 
+ environment:
+   sdk: ^3.13.2
+@@ -36,6 +36,7 @@ dependencies:
+   go_router: ^18.0.2
+   hive_ce: ^2.20.1
+   hive_ce_flutter: ^2.4.0
++  smb_connect: 0.0.9
+   http: ^1.6.0
+   intl: any
+   just_audio: ^0.10.6
+@@ -53,6 +54,7 @@ dependencies:
    tutorial_coach_mark: ^1.3.4
    universal_html: ^2.3.0
    url_launcher: ^6.3.2
