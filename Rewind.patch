@@ -138,6 +138,40 @@ index 1783c84..64c85f9 100644
      }
  }
  
+diff --git a/assets/UPSTREAM-LICENSE.txt b/assets/UPSTREAM-LICENSE.txt
+new file mode 100644
+index 0000000..823c59f
+--- /dev/null
++++ b/assets/UPSTREAM-LICENSE.txt
+@@ -0,0 +1,27 @@
++Copyright (c) 2025, Aditya R
++All rights reserved.
++
++Redistribution and use in source and binary forms, with or without
++modification, are permitted provided that the following conditions are met:
++1. Redistributions of source code must retain the above copyright
++   notice, this list of conditions and the following disclaimer.
++2. Redistributions in binary form must reproduce the above copyright
++   notice, this list of conditions and the following disclaimer in the
++   documentation and/or other materials provided with the distribution.
++3. All advertising materials mentioning features or use of this software
++   must display the following acknowledgement:
++   This product includes software developed by Aditya R.
++4. Neither the name of Aditya R nor the
++   names of its contributors may be used to endorse or promote products
++   derived from this software without specific prior written permission.
++
++THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDER ''AS IS'' AND ANY
++EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
++WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
++DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
++FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
++DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
++SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
++CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
++OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
++USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+\ No newline at end of file
 diff --git a/lib/classipod_app.dart b/lib/classipod_app.dart
 index d7c13b5..790e42d 100644
 --- a/lib/classipod_app.dart
@@ -328,6 +362,28 @@ index 94ff1e2..afb6440 100644
        child: SizedBox(
          height: 30,
          width: double.infinity,
+diff --git a/lib/features/app_startup/controllers/app_startup_controller.dart b/lib/features/app_startup/controllers/app_startup_controller.dart
+index 10fd766..add07ba 100644
+--- a/lib/features/app_startup/controllers/app_startup_controller.dart
++++ b/lib/features/app_startup/controllers/app_startup_controller.dart
+@@ -27,7 +27,7 @@ final appStartupControllerProvider = FutureProvider<void>((ref) async {
+     ],
+     if (!kIsWeb) ref.watch(deviceDirectoryProvider.future),
+     ref.watch(sharedPreferencesWithCacheProvider.future),
+-    Hive.initFlutter("ClassiPod"),
++    Hive.initFlutter("FrankensteinRewind"),
+   ]);
+   Hive.registerAdapters();
+   await Hive.openBox<PlaylistModel>(Constants.playlistBoxName);
+@@ -36,7 +36,7 @@ final appStartupControllerProvider = FutureProvider<void>((ref) async {
+   );
+   if (!kIsWeb && (Platform.isWindows || Platform.isLinux)) {
+     JustAudioMediaKit.ensureInitialized();
+-    JustAudioMediaKit.title = 'ClassiPod';
++    JustAudioMediaKit.title = 'Frankenstein Rewind';
+   }
+   await initializeMediaSession(ref.read(libraryAudioHandlerProvider));
+   unawaited(ref.read(clickSoundServiceProvider).preload());
 diff --git a/lib/features/custom_screen_elements/custom_screen.dart b/lib/features/custom_screen_elements/custom_screen.dart
 index aa884ff..aba8416 100644
 --- a/lib/features/custom_screen_elements/custom_screen.dart
@@ -1202,7 +1258,7 @@ index 0000000..2658197
 +}
 diff --git a/lib/features/rewind/network_library.dart b/lib/features/rewind/network_library.dart
 new file mode 100644
-index 0000000..0db458e
+index 0000000..ffa811c
 --- /dev/null
 +++ b/lib/features/rewind/network_library.dart
 @@ -0,0 +1,190 @@
@@ -1313,7 +1369,7 @@ index 0000000..0db458e
 +    if (await file.exists() && await file.length() == f.size) return file;
 +    final part = File('${file.path}.part');
 +    try {
-+      await (await share!.openRead(f)).pipe(part.openWrite());
++      await (await share!.openRead(f)).cast<List<int>>().pipe(part.openWrite());
 +      if (await part.length() != f.size)
 +        throw StateError(
 +          'Incomplete network transfer. Retry on your home network.',
