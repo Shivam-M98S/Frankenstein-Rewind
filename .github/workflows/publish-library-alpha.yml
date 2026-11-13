@@ -1,0 +1,36 @@
+name: Publish verified 0.2 Android alpha
+on:
+  push:
+    branches: [feature/library-upgrade]
+    paths: ['.github/workflows/publish-library-alpha.yml']
+permissions:
+  actions: read
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Download the verified build and publish the prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_ID: '43382103917'
+        run: |
+          set -euo pipefail
+          gh run watch "$BUILD_ID" --exit-status --interval 30
+          gh run download "$BUILD_ID" -n Frankenstein-Rewind-S10 -D apk
+          mv apk/Frankenstein-Rewind-S10.apk apk/Frankenstein-Rewind-0.2.0-alpha.1.apk
+          cd apk
+          sha256sum Frankenstein-Rewind-0.2.0-alpha.1.apk > SHA256SUMS.txt
+          cat > notes.md <<'NOTES'
+          Android test build with Spotify session reuse, Now Playing, SMB shared folders, Subsonic, local music, internet radio, cached artwork, and customizable menus. Settings → Experimental includes a local audio spectrum, glass bezel, and S10 edge layout. Donations are disabled.
+
+          This installs alongside the first alpha. Register the Android package `io.github.shivamm98s.frankensteinrewind` and the certificate SHA-1 below in your Spotify developer app. Keep `frankensteinrewind://auth` as the redirect. Then enter your public client ID under Settings → Library → Spotify setup.
+
+          This product includes software developed by Aditya R.
+          NOTES
+          echo >> notes.md
+          awk '/certificate SHA-1 digest:/ {print "APK signing certificate SHA-1: **" toupper($NF) "**"}' signing.txt >> notes.md
+          gh release create v0.2.0-alpha.1 Frankenstein-Rewind-0.2.0-alpha.1.apk SHA256SUMS.txt signing.txt --prerelease --target "$GITHUB_SHA" --title 'Frankenstein Rewind 0.2.0 alpha 1' --notes-file notes.md
