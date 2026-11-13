@@ -1,0 +1,46 @@
+name: Frankenstein Rewind S10 APK
+on:
+  push:
+    branches: [feature/library-upgrade]
+    paths: ['Rewind.patch', '.github/workflows/rewind-s10.yml']
+permissions:
+  contents: read
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: adeeteya/Classipod
+          ref: 772a6d3533677bfa78f9251a40df8fa8ca3e6180
+          path: player
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.6'
+          cache: true
+      - name: Compile and inspect Android package
+        working-directory: player
+        run: |
+          git apply ../Rewind.patch
+          flutter pub get
+          flutter gen-l10n
+          dart run build_runner build --delete-conflicting-outputs
+          flutter build apk --debug --flavor dev --target-platform android-arm,android-arm64,android-x64
+          cp build/app/outputs/flutter-apk/app-dev-debug.apk ../Frankenstein-Rewind-S10.apk
+          signer=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)
+          "$signer" verify --print-certs ../Frankenstein-Rewind-S10.apk | tee ../signing.txt
+          sha256sum ../Frankenstein-Rewind-S10.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Frankenstein-Rewind-S10
+          path: |
+            Frankenstein-Rewind-S10.apk
+            signing.txt
