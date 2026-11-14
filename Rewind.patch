@@ -29,10 +29,10 @@ index d9424f3..6bbbe76 100644
          }
      }
 diff --git a/android/app/src/main/AndroidManifest.xml b/android/app/src/main/AndroidManifest.xml
-index 0830593..9e7ab0a 100644
+index 0830593..5f10475 100644
 --- a/android/app/src/main/AndroidManifest.xml
 +++ b/android/app/src/main/AndroidManifest.xml
-@@ -4,6 +4,8 @@
+@@ -4,12 +4,15 @@
  
      <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
      <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
@@ -41,11 +41,18 @@ index 0830593..9e7ab0a 100644
      <uses-permission android:name="android.permission.WAKE_LOCK" />
      <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
      <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
-@@ -18,8 +20,17 @@
+     <uses-permission android:name="android.permission.VIBRATE" />
+ 
+     <uses-permission android:name="android.permission.INTERNET" />
++    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
+ 
+     <application
+         android:networkSecurityConfig="@xml/network_security_config"
+@@ -18,8 +21,17 @@
          android:name="${applicationName}"
          android:icon="@mipmap/ic_launcher"
          android:enableOnBackInvokedCallback="true">
-+        <activity android:name="com.spotify.sdk.android.auth.browser.RedirectUriReceiverActivity"
++        <activity android:name="com.linusu.flutter_web_auth_2.CallbackActivity" android:taskAffinity=""
 +            android:exported="true">
 +            <intent-filter>
 +                <action android:name="android.intent.action.VIEW" />
@@ -60,7 +67,7 @@ index 0830593..9e7ab0a 100644
              android:exported="true"
              android:launchMode="singleTop"
              android:taskAffinity=""
-@@ -74,6 +85,7 @@
+@@ -74,6 +86,7 @@
  
           In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
      <queries>
@@ -69,10 +76,10 @@ index 0830593..9e7ab0a 100644
              <action android:name="android.intent.action.PROCESS_TEXT" />
              <data android:mimeType="text/plain" />
 diff --git a/android/app/src/main/kotlin/com/adeeteya/classipod/MainActivity.kt b/android/app/src/main/kotlin/com/adeeteya/classipod/MainActivity.kt
-index 67e9c63..fe9e1fb 100644
+index 67e9c63..3408b69 100644
 --- a/android/app/src/main/kotlin/com/adeeteya/classipod/MainActivity.kt
 +++ b/android/app/src/main/kotlin/com/adeeteya/classipod/MainActivity.kt
-@@ -1,5 +1,49 @@
+@@ -1,5 +1,68 @@
  package com.adeeteya.classipod
  
 -import io.flutter.embedding.android.FlutterActivity
@@ -87,9 +94,28 @@ index 67e9c63..fe9e1fb 100644
  
 -class MainActivity : FlutterActivity()
 +class MainActivity : AudioServiceActivity() {
++    private val lanPermission = "android.permission.ACCESS_LOCAL_NETWORK"
++    private var permissionResult: io.flutter.plugin.common.MethodChannel.Result? = null
++    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
++        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
++        if (requestCode == 4317) {
++            permissionResult?.success(grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED)
++            permissionResult = null
++        }
++    }
 +    private var visualizer: Visualizer? = null
 +    override fun configureFlutterEngine(engine: FlutterEngine) {
 +        super.configureFlutterEngine(engine)
++        io.flutter.plugin.common.MethodChannel(engine.dartExecutor.binaryMessenger, "rewind/network").setMethodCallHandler { call, result ->
++            if (call.method != "allowLan") result.notImplemented()
++            else if (android.os.Build.VERSION.SDK_INT < 37 || applicationInfo.targetSdkVersion < 37 ||
++                checkSelfPermission(lanPermission) == android.content.pm.PackageManager.PERMISSION_GRANTED) result.success(true)
++            else if (permissionResult != null) result.error("busy", "Permission request in progress", null)
++            else {
++                permissionResult = result
++                requestPermissions(arrayOf(lanPermission), 4317)
++            }
++        }
 +        val main = Handler(Looper.getMainLooper())
 +        EventChannel(engine.dartExecutor.binaryMessenger, "frankensteinrewind/spectrum")
 +            .setStreamHandler(object : EventChannel.StreamHandler {
@@ -385,22 +411,21 @@ index 10fd766..add07ba 100644
    await initializeMediaSession(ref.read(libraryAudioHandlerProvider));
    unawaited(ref.read(clickSoundServiceProvider).preload());
 diff --git a/lib/features/custom_screen_elements/custom_screen.dart b/lib/features/custom_screen_elements/custom_screen.dart
-index aa884ff..aba8416 100644
+index aa884ff..0c2bbff 100644
 --- a/lib/features/custom_screen_elements/custom_screen.dart
 +++ b/lib/features/custom_screen_elements/custom_screen.dart
-@@ -1,3 +1,6 @@
+@@ -1,3 +1,5 @@
 +import 'package:classipod/features/rewind/spotify_session.dart';
-+import 'package:spotify_sdk/spotify_sdk.dart';
 +
  import 'dart:async';
  
  import 'package:classipod/core/extensions/build_context_extensions.dart';
-@@ -99,10 +102,18 @@ mixin CustomScreen<T extends ConsumerStatefulWidget> on ConsumerState<T> {
+@@ -99,10 +101,18 @@ mixin CustomScreen<T extends ConsumerStatefulWidget> on ConsumerState<T> {
    }
  
    Future<void> seekForward() async {
 +    if (spotify.active && spotify.connected) {
-+      await SpotifySdk.skipNext();
++      await spotify.skipNext();
 +      return;
 +    }
      await ref.read(audioPlayerServiceProvider.notifier).nextSong();
@@ -408,19 +433,18 @@ index aa884ff..aba8416 100644
  
    Future<void> seekBackward() async {
 +    if (spotify.active && spotify.connected) {
-+      await SpotifySdk.skipPrevious();
++      await spotify.skipPrevious();
 +      return;
 +    }
      await ref.read(audioPlayerServiceProvider.notifier).seekBackwards();
    }
  
 diff --git a/lib/features/device/services/device_buttons_service_provider.dart b/lib/features/device/services/device_buttons_service_provider.dart
-index 3ab26ce..d644f80 100644
+index 3ab26ce..330bc9f 100644
 --- a/lib/features/device/services/device_buttons_service_provider.dart
 +++ b/lib/features/device/services/device_buttons_service_provider.dart
-@@ -1,5 +1,11 @@
+@@ -1,5 +1,10 @@
 +import 'package:classipod/features/rewind/spotify_session.dart';
-+import 'package:spotify_sdk/spotify_sdk.dart';
 +import 'package:classipod/core/extensions/go_router_extensions.dart';
 +
  import 'dart:io';
@@ -430,7 +454,7 @@ index 3ab26ce..d644f80 100644
  import 'package:classipod/core/services/audio_player_service.dart';
  import 'package:classipod/core/services/click_sound_service.dart';
  import 'package:classipod/features/device/models/device_action.dart';
-@@ -54,7 +60,17 @@ class DeviceButtonsServiceNotifier extends Notifier<DeviceAction?> {
+@@ -54,7 +59,17 @@ class DeviceButtonsServiceNotifier extends Notifier<DeviceAction?> {
      await Future.wait([buttonPressVibrate(), clickWheelSound()]);
      state = null;
      state = DeviceAction.playPause;
@@ -438,9 +462,9 @@ index 3ab26ce..d644f80 100644
 +    if (ref.read(routerProvider).locationNamed != Routes.rewind.name) {
 +      if (spotify.active && spotify.connected) {
 +        if (spotify.paused) {
-+          await SpotifySdk.resume();
++          await spotify.resume();
 +        } else {
-+          await SpotifySdk.pause();
++          await spotify.pause();
 +        }
 +        return;
 +      }
@@ -1405,11 +1429,19 @@ index 0000000..2658197
 +}
 diff --git a/lib/features/rewind/network_library.dart b/lib/features/rewind/network_library.dart
 new file mode 100644
-index 0000000..ffa811c
+index 0000000..06e2bd4
 --- /dev/null
 +++ b/lib/features/rewind/network_library.dart
-@@ -0,0 +1,190 @@
+@@ -0,0 +1,263 @@
 +import 'dart:convert';
++
++import 'package:flutter/services.dart';
++import 'package:smb_connect/src/connect/impl/base_configuration.dart';
++import 'package:smb_connect/src/smb/authentication_type.dart';
++import 'package:smb_connect/src/smb/ntlm_password_authenticator.dart';
++
++import 'share_address.dart';
++
 +import 'dart:io';
 +
 +import 'package:crypto/crypto.dart';
@@ -1429,23 +1461,60 @@ index 0000000..ffa811c
 +  String root = '/';
 +  final downloads = <String, Future<File>>{};
 +  Future<void> configure(String address, String user, String password) async {
-+    final uri = Uri.parse(address);
-+    if (uri.scheme != 'smb' ||
-+        uri.host.isEmpty ||
-+        uri.pathSegments.where((s) => s.isNotEmpty).isEmpty ||
-+        uri.userInfo.isNotEmpty) {
-+      throw FormatException(
-+        'Use smb://server/share or smb://server/share/folder.',
++    final uri = shareAddress(address);
++    if (Platform.isAndroid &&
++        !await const MethodChannel('rewind/network')
++            .invokeMethod<bool>('allowLan')
++            .then((ok) => ok == true)) {
++      throw StateError(
++        'Allow local network access in Android app permissions to reach your server.',
 +      );
 +    }
-+    final next = await SmbConnect.connectAuth(
-+      host: uri.host,
-+      domain: '',
-+      username: user,
-+      password: password,
-+    ).timeout(const Duration(seconds: 12));
++    final path = '/' + uri.pathSegments.where((s) => s.isNotEmpty).join('/');
++    final parts = user.trim().split(String.fromCharCode(92));
++    final domain = parts.length > 1 ? parts.first : '';
++    final username = parts.last;
++    final guest = username.isEmpty;
++    final next =
++        await (guest
++                ? SmbConnect.connect(
++                    BaseConfiguration(
++                      credentials: NtlmPasswordAuthenticator(
++                        type: AuthenticationType.GUEST,
++                        username: 'guest',
++                      ),
++                      username: 'guest',
++                      password: '',
++                      domain: '',
++                    ),
++                    uri.host,
++                  )
++                : SmbConnect.connectAuth(
++                    host: uri.host,
++                    domain: domain,
++                    username: username,
++                    password: password,
++                  ))
++            .timeout(
++              const Duration(seconds: 15),
++              onTimeout: () => throw StateError(
++                'Server timed out. Check Wi-Fi, server address and SMB port 445.',
++              ),
++            );
 +    try {
-+      await next.listFiles(await next.file(uri.path));
++      if (path == '/') {
++        try {
++          await next.listShares().timeout(const Duration(seconds: 12));
++        } catch (_) {
++          throw StateError(
++            'Share listing is unavailable. Enter server/share with the exact shared-folder name.',
++          );
++        }
++      } else {
++        await next
++            .listFiles(await next.file(path))
++            .timeout(const Duration(seconds: 12));
++      }
 +    } catch (_) {
 +      await next.close();
 +      rethrow;
@@ -1456,14 +1525,14 @@ index 0000000..ffa811c
 +    );
 +    await share?.close();
 +    share = next;
-+    root = uri.path;
++    root = path;
 +  }
 +
 +  Future<void> open() async {
 +    if (share != null) return;
 +    final saved = await vault.read(key: 'rewind.smb');
 +    if (saved == null)
-+      throw StateError('Add your shared folder in Settings  Library.');
++      throw StateError('Add your shared folder in Settings > Library.');
 +    final data = List<String>.from(jsonDecode(saved));
 +    await configure(data[0], data[1], data[2]);
 +  }
@@ -1471,17 +1540,33 @@ index 0000000..ffa811c
 +  Future<List<Entry>> files(String path) async {
 +    await open();
 +    final folder = path.isEmpty ? root : path;
-+    final rows = await share!.listFiles(await share!.file(folder));
++    final List<SmbFile> rows;
++    try {
++      rows = folder == '/'
++          ? await share!.listShares()
++          : await share!.listFiles(await share!.file(folder));
++    } catch (_) {
++      final old = share;
++      share = null;
++      await old?.close();
++      rethrow;
++    }
 +    final entries = <Entry>[
 +      for (final f in rows)
 +        if (f.name != '.' &&
 +            f.name != '..' &&
-+            (f.isDirectory() ||
++            (folder == '/' ||
++                f.isDirectory() ||
 +                RegExp(
 +                  r'\.(mp3|flac|m4a|aac|ogg|opus|wav)$',
 +                  caseSensitive: false,
 +                ).hasMatch(f.name)))
-+          (title: f.name, id: (f.isDirectory() ? 'dir:' : 'smbfile:') + f.path),
++          (
++            title: f.name,
++            id:
++                ((folder == '/' || f.isDirectory()) ? 'dir:' : 'smbfile:') +
++                f.path,
++          ),
 +    ];
 +    entries.sort(
 +      (a, b) => a.id.startsWith('dir:') == b.id.startsWith('dir:')
@@ -1546,11 +1631,17 @@ index 0000000..ffa811c
 +    await rewindPrefs.setString('rewind.stations', jsonEncode(map));
 +  }
 +
++  static const suriname = <Entry>[
++    (title: 'Radio 10 Magic FM', id: 'https://s5.radio.co/s85a633f73/listen'),
++    (title: 'Radio Apintie', id: 'https://surilive.com:8000/;'),
++  ];
++
 +  Future<List<Entry>> stations({String? country, String? query}) async {
++    if (country == 'SR' && query == null) return suriname;
 +    for (final host in [
 +      'de1.api.radio-browser.info',
 +      'at1.api.radio-browser.info',
-+      'nl1.api.radio-browser.info',
++      'all.api.radio-browser.info',
 +    ]) {
 +      try {
 +        final uri = Uri.https(host, '/json/stations/search', {
@@ -1566,14 +1657,20 @@ index 0000000..ffa811c
 +            .timeout(const Duration(seconds: 6));
 +        if (response.statusCode != 200) continue;
 +        final list = jsonDecode(utf8.decode(response.bodyBytes)) as List;
-+        return [
++        final entries = <Entry>[
 +          for (final row in list)
-+            if (validStream(row['url_resolved']))
++            if (row is Map &&
++                (validStream(row['url_resolved']) || validStream(row['url'])))
 +              (
 +                title: row['name'].toString().trim(),
-+                id: row['url_resolved'] as String,
++                id:
++                    (validStream(row['url_resolved'])
++                            ? row['url_resolved']
++                            : row['url'])
++                        as String,
 +              ),
 +        ];
++        return entries;
 +      } catch (_) {
 +        continue;
 +      }
@@ -1639,10 +1736,10 @@ index 0000000..8d50463
 +final rewindAppearance = ValueNotifier<int>(0);
 diff --git a/lib/features/rewind/rewind_screen.dart b/lib/features/rewind/rewind_screen.dart
 new file mode 100644
-index 0000000..651cd16
+index 0000000..364039d
 --- /dev/null
 +++ b/lib/features/rewind/rewind_screen.dart
-@@ -0,0 +1,830 @@
+@@ -0,0 +1,841 @@
 +import 'package:classipod/features/rewind/spotify_art.dart';
 +import 'package:permission_handler/permission_handler.dart';
 +import 'package:classipod/core/extensions/build_context_extensions.dart';
@@ -1666,7 +1763,6 @@ index 0000000..651cd16
 +import 'package:flutter/cupertino.dart';
 +import 'package:flutter_riverpod/flutter_riverpod.dart';
 +import 'package:go_router/go_router.dart';
-+import 'package:spotify_sdk/spotify_sdk.dart';
 +import 'package:url_launcher/url_launcher.dart';
 +
 +class RewindScreen extends ConsumerStatefulWidget {
@@ -1749,7 +1845,6 @@ index 0000000..651cd16
 +          title: 'Night Drive - ${rewindNight.value ? "On" : "Off"}',
 +          id: 'night',
 +        ),
-+        (title: 'Pin playlist link', id: 'pin-link'),
 +      ];
 +    }
 +    if (section == 'Now Playing') {
@@ -1809,7 +1904,13 @@ index 0000000..651cd16
 +        ? library.where((e) => e.id.startsWith('smbfile:')).toList()
 +        : [selected];
 +    final service = ref.read(audioPlayerServiceProvider.notifier);
-+    if (spotify.active && !spotify.paused) await SpotifySdk.pause();
++    if (spotify.active && !spotify.paused) {
++      try {
++        await spotify.pause();
++      } catch (_) {
++        /* An offline Spotify session must not block another player. */
++      }
++    }
 +    spotify.selectLocal();
 +    await service.setAudioSource(
 +      preload: false,
@@ -1819,7 +1920,10 @@ index 0000000..651cd16
 +      ],
 +      nowPlayingType: NowPlayingType.playlist,
 +    );
-+    await service.playSongAtIndex(entries.indexOf(selected));
++    ref.read(audioPlayerServiceProvider).requireValue;
++    await ref
++        .read(libraryAudioHandlerProvider)
++        .select(entries.indexOf(selected));
 +    if (mounted)
 +      await context.pushNamed(
 +        Routes.nowPlaying.name,
@@ -1924,7 +2028,7 @@ index 0000000..651cd16
 +  Future<void> play(String uri) async {
 +    await connect();
 +    await ref.read(audioPlayerServiceProvider.notifier).pause();
-+    await SpotifySdk.play(spotifyUri: uri);
++    await spotify.play(spotifyUri: uri);
 +    spotify.active = true;
 +    page('Now Playing');
 +  }
@@ -1987,12 +2091,10 @@ index 0000000..651cd16
 +      return;
 +    }
 +    await connect();
-+    final state = await SpotifySdk.getPlayerState();
-+    if (state == null) throw StateError('Spotify player is unavailable.');
-+    if (state.isPaused) {
-+      await SpotifySdk.resume();
++    if (spotify.paused) {
++      await spotify.resume();
 +    } else {
-+      await SpotifySdk.pause();
++      await spotify.pause();
 +    }
 +  }
 +
@@ -2023,12 +2125,12 @@ index 0000000..651cd16
 +    if (section == 'Liked Songs' && id.startsWith('spotify:track:')) {
 +      await connect();
 +      await ref.read(audioPlayerServiceProvider.notifier).pause();
-+      await SpotifySdk.play(spotifyUri: id);
++      await spotify.play(spotifyUri: id);
 +      spotify.active = true;
 +      final following = library.skip(library.indexOf(entry) + 1).toList();
 +      page('Now Playing');
 +      for (final next in following) {
-+        await SpotifySdk.queue(spotifyUri: next.id);
++        await spotify.queue(spotifyUri: next.id);
 +      }
 +      return;
 +    }
@@ -2044,16 +2146,18 @@ index 0000000..651cd16
 +        break;
 +      case 'skip':
 +        await connect();
-+        await SpotifySdk.skipNext();
++        await spotify.skipNext();
 +        break;
 +      case 'previous':
 +        await connect();
-+        await SpotifySdk.skipPrevious();
++        await spotify.skipPrevious();
 +        break;
 +      case 'authorize':
 +        if (clientId.isEmpty && !await setup()) return;
 +        await connect();
-+        message = 'Playback connected';
++        message = spotify.webPlayer && spotify.uri.isEmpty
++            ? 'Linked. Start a song in Spotify to activate your device.'
++            : 'Playback connected';
 +      case 'allow-library':
 +        if (clientId.isEmpty && !await setup()) return;
 +        await spotifyLibrary.page(clientId, 'Playlists', limit: 1);
@@ -2062,11 +2166,13 @@ index 0000000..651cd16
 +        await spotify.reset(clientId);
 +        message = 'Disconnected';
 +      case 'configure-share':
-+        final address = await prompt('Shared folder address', 'smb://');
++        final address = await prompt('Server IP or server/share', '');
 +        if (address == null) return;
 +        final user = await prompt('Username (blank for guest)', '');
 +        if (user == null) return;
-+        final password = await prompt('Password', '', secret: true);
++        final password = user.trim().isEmpty
++            ? ''
++            : await prompt('Password', '', secret: true);
 +        if (password == null) return;
 +        await networkLibrary.configure(address, user, password);
 +        message = 'Connected';
@@ -2086,12 +2192,14 @@ index 0000000..651cd16
 +        );
 +        page(code.toUpperCase());
 +        library = items;
++        if (items.isEmpty) message = 'No stations found for this country.';
 +      case 'search':
 +        final name = await prompt('Station name', '');
 +        if (name == null) return;
 +        final items = await networkLibrary.stations(query: name);
 +        page('Stations');
 +        library = items;
++        if (items.isEmpty) message = 'No stations matched that name.';
 +      case 'favorites':
 +        page('Favorites');
 +        library = networkLibrary.favorites;
@@ -2185,7 +2293,7 @@ index 0000000..651cd16
 +    if (!mounted || action == null) return;
 +    if (!pin) {
 +      await connect();
-+      await SpotifySdk.queue(spotifyUri: entry.id);
++      await spotify.queue(spotifyUri: entry.id);
 +      if (mounted) setState(() => message = 'Queued - ${entry.title}');
 +    } else if (action == 'remove') {
 +      await savePin(entry.id, null);
@@ -2246,7 +2354,7 @@ index 0000000..651cd16
 +      return;
 +    }
 +    await connect();
-+    await SpotifySdk.skipNext();
++    await spotify.skipNext();
 +  });
 +  @override
 +  Future<void> seekBackward() => run(() async {
@@ -2255,7 +2363,7 @@ index 0000000..651cd16
 +      return;
 +    }
 +    await connect();
-+    await SpotifySdk.skipPrevious();
++    await spotify.skipPrevious();
 +  });
 +  @override
 +  Future<void> deviceControlHandler(dynamic old, DeviceAction? action) async {
@@ -2473,6 +2581,31 @@ index 0000000..651cd16
 +    );
 +  }
 +}
+diff --git a/lib/features/rewind/share_address.dart b/lib/features/rewind/share_address.dart
+new file mode 100644
+index 0000000..3a40e12
+--- /dev/null
++++ b/lib/features/rewind/share_address.dart
+@@ -0,0 +1,19 @@
++Uri shareAddress(String input) {
++  var text = input.trim().replaceAll('\\', '/');
++  if (text.startsWith('//')) text = text.substring(2);
++  if (!text.contains('://')) text = 'smb://$text';
++  final uri = Uri.tryParse(text);
++  if (uri == null ||
++      uri.scheme != 'smb' ||
++      uri.host.isEmpty ||
++      uri.host.contains(RegExp(r'\s')) ||
++      uri.userInfo.isNotEmpty ||
++      uri.hasQuery ||
++      uri.hasFragment ||
++      (uri.hasPort && uri.port != 445)) {
++    throw const FormatException(
++      'Enter a server name, IP address, or Windows shared folder (server/share).',
++    );
++  }
++  return uri;
++}
 diff --git a/lib/features/rewind/spectrum.dart b/lib/features/rewind/spectrum.dart
 new file mode 100644
 index 0000000..69e84fe
@@ -2682,13 +2815,158 @@ index 0000000..180460f
 +
 +  void close() => _client.close();
 +}
+diff --git a/lib/features/rewind/spotify_oauth.dart b/lib/features/rewind/spotify_oauth.dart
+new file mode 100644
+index 0000000..b96d3ba
+--- /dev/null
++++ b/lib/features/rewind/spotify_oauth.dart
+@@ -0,0 +1,132 @@
++import 'dart:convert';
++import 'dart:math';
++
++import 'package:crypto/crypto.dart';
++import 'package:flutter_secure_storage/flutter_secure_storage.dart';
++import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
++import 'package:http/http.dart' as http;
++
++String pkceChallenge(String verifier) => base64Url
++    .encode(sha256.convert(ascii.encode(verifier)).bytes)
++    .replaceAll('=', '');
++
++class SpotifyOAuth {
++  SpotifyOAuth({http.Client? client}) : client = client ?? http.Client();
++  final http.Client client;
++  final storage = const FlutterSecureStorage();
++  Future<String>? pending;
++  String? pendingId;
++
++  Future<String> token(
++    String id,
++    String redirect, {
++    bool renew = false,
++    bool interactive = true,
++  }) async {
++    if (pending != null && pendingId == id) return pending!;
++    pendingId = id;
++    final request = _token(id, Uri.parse(redirect), renew, interactive);
++    pending = request;
++    try {
++      return await request;
++    } finally {
++      if (identical(pending, request)) pending = null;
++    }
++  }
++
++  Future<String> _token(
++    String id,
++    Uri redirect,
++    bool renew,
++    bool interactive,
++  ) async {
++    final key = 'rewind.pkce.$id';
++    final saved = jsonDecode(await storage.read(key: key) ?? '{}') as Map;
++    final now = DateTime.now().millisecondsSinceEpoch;
++    if (!renew &&
++        (saved['expires'] as int? ?? 0) > now + 60000 &&
++        saved['access'] is String) {
++      return saved['access'] as String;
++    }
++    Future<http.Response> exchange(Map<String, String> body) => client
++        .post(
++          Uri.https('accounts.spotify.com', '/api/token'),
++          body: {'client_id': id, ...body},
++        )
++        .timeout(const Duration(seconds: 20));
++    final refresh = saved['refresh'] as String?;
++    http.Response? result;
++    if (refresh != null) {
++      result = await exchange({
++        'grant_type': 'refresh_token',
++        'refresh_token': refresh,
++      });
++      if (result.statusCode == 400 &&
++          jsonDecode(result.body)['error'] == 'invalid_grant')
++        result = null;
++    }
++    if (result == null) {
++      if (!interactive)
++        throw StateError('Reconnect Spotify to renew authorization.');
++      String nonce() {
++        final rng = Random.secure();
++        return base64Url
++            .encode(List.generate(48, (_) => rng.nextInt(256)))
++            .replaceAll('=', '');
++      }
++
++      final verifier = nonce(), state = nonce();
++      final url = Uri.https('accounts.spotify.com', '/authorize', {
++        'client_id': id,
++        'response_type': 'code',
++        'redirect_uri': redirect.toString(),
++        'code_challenge_method': 'S256',
++        'code_challenge': pkceChallenge(verifier),
++        'state': state,
++        'scope': 'user-library-read playlist-read-private playlist-read-collaborative user-read-playback-state user-modify-playback-state',
++      });
++      final reply = Uri.parse(
++        await FlutterWebAuth2.authenticate(
++          url: url.toString(),
++          callbackUrlScheme: redirect.scheme,
++        ),
++      );
++      if (reply.scheme != redirect.scheme ||
++          reply.authority != redirect.authority ||
++          reply.path != redirect.path ||
++          reply.queryParameters['state'] != state) {
++        throw StateError('Spotify sign-in callback did not match. Try again.');
++      }
++      final code = reply.queryParameters['code'];
++      if (code == null)
++        throw StateError(
++          'Spotify sign-in was declined. Choose Connect to retry.',
++        );
++      result = await exchange({
++        'grant_type': 'authorization_code',
++        'redirect_uri': redirect.toString(),
++        'code_verifier': verifier,
++        'code': code,
++      });
++    }
++    if (result.statusCode != 200)
++      throw StateError(
++        'Spotify sign-in returned HTTP ${result.statusCode}. Retry when online.',
++      );
++    final data = jsonDecode(result.body) as Map;
++    final access = data['access_token'] as String;
++    await storage.write(
++      key: key,
++      value: jsonEncode({
++        'access': access,
++        'refresh': data['refresh_token'] ?? refresh,
++        'expires':
++            DateTime.now().millisecondsSinceEpoch +
++            ((data['expires_in'] as int) * 1000),
++      }),
++    );
++    return access;
++  }
++
++  Future<void> forget(String id) => storage.delete(key: 'rewind.pkce.$id');
++}
 diff --git a/lib/features/rewind/spotify_session.dart b/lib/features/rewind/spotify_session.dart
 new file mode 100644
-index 0000000..adfbc6f
+index 0000000..a6efe4b
 --- /dev/null
 +++ b/lib/features/rewind/spotify_session.dart
-@@ -0,0 +1,122 @@
+@@ -0,0 +1,287 @@
 +import 'dart:async';
++import 'dart:convert';
++
++import 'package:flutter/services.dart';
++import 'package:flutter/widgets.dart';
++import 'package:http/http.dart' as http;
++
++import 'spotify_oauth.dart';
 +
 +import 'package:classipod/features/rewind/spotify_setup.dart';
 +
@@ -2726,22 +3004,155 @@ index 0000000..adfbc6f
 +  StreamSubscription<dynamic>? subscription;
 +  Future<void>? pending;
 +
-+  Future<String> token(String id, {bool renew = false}) async {
-+    final key = 'rewind.spotify.$id';
-+    if (!renew) {
-+      final saved = await storage.read(key: key);
-+      if (saved != null && saved.isNotEmpty) return saved;
++  final oauth = SpotifyOAuth();
++  bool webPlayer = false;
++  Timer? poll;
++  bool polling = false;
++  Future<String> token(String id, {bool renew = false}) =>
++      oauth.token(id, redirect, renew: renew);
++
++  Future<http.Response> _api(
++    String method,
++    String path, {
++    Map<String, dynamic>? body,
++    Map<String, String>? query,
++    bool interactive = true,
++  }) async {
++    final uri = Uri.https('api.spotify.com', '/v1/me/player$path', query);
++    Future<http.Response> send(bool renew) async {
++      final headers = {
++        'Authorization':
++            'Bearer ${await oauth.token(clientId, redirect, renew: renew, interactive: interactive)}',
++        'Content-Type': 'application/json',
++      };
++      final payload = body == null ? null : jsonEncode(body);
++      return switch (method) {
++        'GET' => http.get(uri, headers: headers),
++        'POST' => http.post(uri, headers: headers, body: payload),
++        _ => http.put(uri, headers: headers, body: payload),
++      };
 +    }
-+    final fresh = await SpotifySdk.getAccessToken(
-+      clientId: id,
-+      redirectUrl: redirect,
-+      scope: 'app-remote-control,user-library-read,playlist-read-private,playlist-read-collaborative',
++
++    var res = await send(false).timeout(const Duration(seconds: 18));
++    if (res.statusCode == 401)
++      res = await send(true).timeout(const Duration(seconds: 18));
++    if (res.statusCode == 404)
++      throw StateError(
++        'Start a song in Spotify on this phone or another Spotify Connect device, then retry.',
++      );
++    if (res.statusCode == 403)
++      throw StateError(
++        'Spotify denied playback. Check Premium, tester access and the selected device.',
++      );
++    if (res.statusCode >= 300)
++      throw StateError('Spotify playback returned HTTP ${res.statusCode}.');
++    return res;
++  }
++
++  Future<void> syncWeb({bool interactive = true}) async {
++    if (polling || !webPlayer) return;
++    polling = true;
++    try {
++      final res = await _api('GET', '', interactive: interactive);
++      if (!webPlayer) return;
++      final state = res.statusCode == 204 ? null : jsonDecode(res.body) as Map?;
++      final item = state?['item'] as Map?;
++      final current = item?['uri'] as String? ?? '';
++      if (current != uri) {
++        final images = item?['album']?['images'] as List?;
++        final url = images == null || images.isEmpty
++            ? null
++            : Uri.tryParse(images.first['url'] as String? ?? '');
++        art = url == null || url.scheme != 'https'
++            ? null
++            : http
++                  .get(url)
++                  .then<Uint8List?>(
++                    (r) => r.statusCode == 200 ? r.bodyBytes : null,
++                  )
++                  .catchError((_) => null);
++      }
++      uri = current;
++      track = item?['name'] as String? ?? '';
++      artist = (item?['artists'] as List? ?? [])
++          .map((a) => a['name'])
++          .join(', ');
++      album = item?['album']?['name'] as String? ?? '';
++      position = state?['progress_ms'] as int? ?? 0;
++      duration = item?['duration_ms'] as int? ?? 0;
++      paused = state?['is_playing'] != true;
++      sampled = DateTime.now();
++      if (!paused && uri.isNotEmpty) active = true;
++      if (uri.isEmpty) active = false;
++      notifyListeners();
++    } finally {
++      polling = false;
++    }
++  }
++
++  Future<void> play({required String spotifyUri}) async {
++    if (!webPlayer) {
++      await SpotifySdk.play(spotifyUri: spotifyUri);
++      return;
++    }
++    await _api(
++      'PUT',
++      '/play',
++      body: spotifyUri.startsWith('spotify:track:')
++          ? {
++              'uris': [spotifyUri],
++            }
++          : {'context_uri': spotifyUri},
 +    );
-+    await storage.write(key: key, value: fresh);
-+    return fresh;
++    await syncWeb();
++  }
++
++  Future<void> pause() async {
++    if (webPlayer) {
++      await _api('PUT', '/pause');
++      await syncWeb();
++    } else {
++      await SpotifySdk.pause();
++    }
++  }
++
++  Future<void> resume() async {
++    if (webPlayer) {
++      await _api('PUT', '/play');
++      await syncWeb();
++    } else {
++      await SpotifySdk.resume();
++    }
++  }
++
++  Future<void> skipNext() async {
++    if (webPlayer) {
++      await _api('POST', '/next');
++      await syncWeb();
++    } else {
++      await SpotifySdk.skipNext();
++    }
++  }
++
++  Future<void> skipPrevious() async {
++    if (webPlayer) {
++      await _api('POST', '/previous');
++      await syncWeb();
++    } else {
++      await SpotifySdk.skipPrevious();
++    }
++  }
++
++  Future<void> queue({required String spotifyUri}) async {
++    if (webPlayer) {
++      await _api('POST', '/queue', query: {'uri': spotifyUri});
++    } else {
++      await SpotifySdk.queue(spotifyUri: spotifyUri);
++    }
 +  }
 +
 +  Future<void> connect(String id) async {
++    if (connected && webPlayer) return;
 +    if (connected) {
 +      try {
 +        if (await SpotifySdk.getPlayerState() != null) return;
@@ -2753,11 +3164,33 @@ index 0000000..adfbc6f
 +
 +  Future<void> _open(String id) async {
 +    await subscription?.cancel();
-+    connected = await SpotifySdk.connectToSpotifyRemote(
-+      clientId: id,
-+      redirectUrl: redirect,
-+    );
-+    if (!connected) throw StateError('Open Spotify and sign in, then retry.');
++    try {
++      connected = await SpotifySdk.connectToSpotifyRemote(
++        clientId: id,
++        redirectUrl: redirect,
++      );
++    } on PlatformException {
++      connected = false;
++    }
++    if (!connected) {
++      await token(id);
++      webPlayer = true;
++      try {
++        await syncWeb();
++      } catch (_) {
++        webPlayer = false;
++        rethrow;
++      }
++      connected = true;
++      poll?.cancel();
++      poll = Timer.periodic(const Duration(seconds: 8), (_) {
++        if (WidgetsBinding.instance.lifecycleState ==
++            AppLifecycleState.resumed) {
++          unawaited(syncWeb(interactive: false).catchError((Object _) {}));
++        }
++      });
++      return;
++    }
 +    subscription = SpotifySdk.subscribePlayerState().listen(
 +      (state) {
 +        final song = state.track;
@@ -2798,7 +3231,10 @@ index 0000000..adfbc6f
 +
 +  Future<void> reset(String old) async {
 +    await subscription?.cancel();
-+    if (connected) await SpotifySdk.disconnect();
++    poll?.cancel();
++    if (connected && !webPlayer) await SpotifySdk.disconnect();
++    webPlayer = false;
++    await oauth.forget(old);
 +    await storage.delete(key: 'rewind.spotify.$old');
 +    connected = false;
 +    active = false;
@@ -2812,10 +3248,10 @@ index 0000000..adfbc6f
 +}
 diff --git a/lib/features/rewind/spotify_setup.dart b/lib/features/rewind/spotify_setup.dart
 new file mode 100644
-index 0000000..94e8cd9
+index 0000000..ed1af11
 --- /dev/null
 +++ b/lib/features/rewind/spotify_setup.dart
-@@ -0,0 +1,37 @@
+@@ -0,0 +1,40 @@
 +String resolveSpotifyClientId(String? saved, String bundled) {
 +  final override = saved?.trim() ?? '';
 +  return override.isNotEmpty ? override : bundled.trim();
@@ -2835,6 +3271,9 @@ index 0000000..94e8cd9
 +      return 'Open Spotify and approve access, then retry.';
 +    case 'AuthenticationFailedException':
 +      return 'Playback sign-in failed. Verify the client ID and the registration for this APK.';
++    case 'CANCELED':
++    case 'CANCELLED':
++      return 'Browser sign-in closed. Choose Connect to retry.';
 +    case 'authenticationError':
 +      if (detail?.toLowerCase().contains('cancel') ?? false) {
 +        return 'Library sign-in closed. Choose Allow library access to retry.';
@@ -2854,7 +3293,7 @@ index 0000000..94e8cd9
 +  _ => 'Spotify library returned HTTP $status. Try again later.',
 +};
 diff --git a/lib/features/settings/screens/about_screen.dart b/lib/features/settings/screens/about_screen.dart
-index f0cdc83..52d3740 100644
+index f0cdc83..39b5e61 100644
 --- a/lib/features/settings/screens/about_screen.dart
 +++ b/lib/features/settings/screens/about_screen.dart
 @@ -33,7 +33,7 @@ class AboutScreen extends ConsumerWidget {
@@ -2871,7 +3310,7 @@ index f0cdc83..52d3740 100644
                  AboutListTile(
                    titleText: context.localization.versionAboutScreenTitle,
 -                  valueText: "2.1.0",
-+                  valueText: "0.2.1 alpha",
++                  valueText: "0.2.3 beta",
                  ),
                  AboutListTile(
                    titleText: context.localization.madeWithLoveTitle,
@@ -2979,7 +3418,7 @@ index 1c59ee0..68aac84 100644
            final controller = ref.read(subsonicControllerProvider.notifier);
            final enabled =
 diff --git a/lib/features/settings/screens/settings_preferences_screen.dart b/lib/features/settings/screens/settings_preferences_screen.dart
-index d0aee6e..8bdd0d3 100644
+index d0aee6e..e4708e8 100644
 --- a/lib/features/settings/screens/settings_preferences_screen.dart
 +++ b/lib/features/settings/screens/settings_preferences_screen.dart
 @@ -1,4 +1,3 @@
@@ -3015,7 +3454,28 @@ index d0aee6e..8bdd0d3 100644
      }
    }
  }
-@@ -182,11 +180,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
+@@ -93,7 +91,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
+   String get routeName => Routes.settings.name;
+ 
+   @override
+-  List<_SettingsDisplayItems> get displayItems => _SettingsDisplayItems.values;
++  List<_SettingsDisplayItems> get displayItems => const [
++    _SettingsDisplayItems.librarySettings,
++    _SettingsDisplayItems.appTheme,
++    _SettingsDisplayItems.deviceColor,
++    _SettingsDisplayItems.clickWheelSensitivity,
++    _SettingsDisplayItems.vibrate,
++    _SettingsDisplayItems.clickWheelSound,
++    _SettingsDisplayItems.shuffle,
++    _SettingsDisplayItems.repeat,
++    _SettingsDisplayItems.language,
++    _SettingsDisplayItems.experimental,
++    _SettingsDisplayItems.about,
++  ];
+ 
+   @override
+   Future<void> onSelectPressed() =>
+@@ -182,11 +192,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
              .read(settingsPreferencesControllerProvider.notifier)
              .resetSettings();
          break;
@@ -3029,7 +3489,7 @@ index d0aee6e..8bdd0d3 100644
          break;
      }
    }
-@@ -313,9 +308,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
+@@ -313,9 +320,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
          ref.read(splitScreenControllerProvider.notifier).changeSplitScreenType =
              SplitScreenType.resetSettings;
          break;
@@ -3075,7 +3535,7 @@ index 9f9d188..71cebd7 100644
        supportedLocales: AppLocalizations.supportedLocales,
        showPerformanceOverlay: debuggerTools.showPerformanceOverlay,
 diff --git a/pubspec.yaml b/pubspec.yaml
-index 1c1a7ec..396b9a5 100644
+index 1c1a7ec..64a34de 100644
 --- a/pubspec.yaml
 +++ b/pubspec.yaml
 @@ -3,7 +3,7 @@ description: "An iPod Classic-inspired player for local music and Subsonic/Navid
@@ -3083,11 +3543,19 @@ index 1c1a7ec..396b9a5 100644
  publish_to: 'none'
  
 -version: 2.1.0+27
-+version: 0.2.1+29
++version: 0.2.3+31
  
  environment:
    sdk: ^3.13.2
-@@ -36,6 +36,7 @@ dependencies:
+@@ -28,6 +28,7 @@ dependencies:
+   flutter_localizations:
+     sdk: flutter
+   flutter_riverpod: ^3.4.3
++  flutter_web_auth_2: ^5.1.0
+   flutter_secure_storage: ^11.2.0
+   flutter_taglib:
+     git:
+@@ -36,6 +37,7 @@ dependencies:
    go_router: ^18.0.2
    hive_ce: ^2.20.1
    hive_ce_flutter: ^2.4.0
@@ -3095,7 +3563,7 @@ index 1c1a7ec..396b9a5 100644
    http: ^1.6.0
    intl: any
    just_audio: ^0.10.6
-@@ -53,6 +54,7 @@ dependencies:
+@@ -53,6 +55,7 @@ dependencies:
    tutorial_coach_mark: ^1.3.4
    universal_html: ^2.3.0
    url_launcher: ^6.3.2
@@ -3103,6 +3571,132 @@ index 1c1a7ec..396b9a5 100644
    vibration: ^3.2.1
    vibration_web: ^1.6.8
    volume_controller: ^3.7.1
+diff --git a/test/unit_tests/rewind/network_sources_test.dart b/test/unit_tests/rewind/network_sources_test.dart
+new file mode 100644
+index 0000000..b15a4a6
+--- /dev/null
++++ b/test/unit_tests/rewind/network_sources_test.dart
+@@ -0,0 +1,120 @@
++import 'dart:io';
++import 'dart:convert';
++
++import 'package:classipod/features/rewind/network_library.dart';
++import 'package:classipod/features/rewind/share_address.dart';
++import 'package:classipod/features/rewind/spotify_oauth.dart';
++import 'package:flutter_secure_storage/flutter_secure_storage.dart';
++import 'package:flutter_test/flutter_test.dart';
++import 'package:http/http.dart' as http;
++import 'package:http/testing.dart';
++import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
++
++class TestPaths extends PathProviderPlatform {
++  final String directory;
++  TestPaths(this.directory);
++  @override
++  Future<String?> getTemporaryPath() async => directory;
++}
++
++void main() {
++  TestWidgetsFlutterBinding.ensureInitialized();
++  test('Windows, host-only and SMB address forms', () {
++    expect(shareAddress(r'\\nas\Music files').pathSegments, ['Music files']);
++    expect(shareAddress('192.168.1.30').host, '192.168.1.30');
++    expect(shareAddress('smb://nas/share/sub').path, '/share/sub');
++    expect(() => shareAddress('https://host/folder'), throwsFormatException);
++  });
++  test('PKCE agrees with the RFC 7636 test vector', () {
++    expect(
++      pkceChallenge('dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk'),
++      'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
++    );
++  });
++  test(
++    'Suriname stations are playable URLs without a directory request',
++    () async {
++      final hits = await NetworkLibrary().stations(country: 'SR');
++      expect(hits.map((e) => e.title), contains('Radio Apintie'));
++      expect(hits.every((e) => Uri.parse(e.id).scheme == 'https'), isTrue);
++    },
++  );
++  test(
++    'Saved authorization refreshes once and is reused without sign-in',
++    () async {
++      FlutterSecureStorage.setMockInitialValues({
++        'rewind.pkce.test': jsonEncode({
++          'access': 'expired',
++          'refresh': 'saved-refresh',
++          'expires': 0,
++        }),
++      });
++      var requests = 0;
++      final oauth = SpotifyOAuth(
++        client: MockClient((request) async {
++          requests++;
++          expect(request.url.host, 'accounts.spotify.com');
++          expect(request.bodyFields['grant_type'], 'refresh_token');
++          expect(request.bodyFields['refresh_token'], 'saved-refresh');
++          return http.Response(
++            jsonEncode({'access_token': 'renewed', 'expires_in': 3600}),
++            200,
++          );
++        }),
++      );
++      expect(
++        await oauth.token(
++          'test',
++          'frankensteinrewindpreview://auth',
++          interactive: false,
++        ),
++        'renewed',
++      );
++      expect(
++        await oauth.token(
++          'test',
++          'frankensteinrewindpreview://auth',
++          interactive: false,
++        ),
++        'renewed',
++      );
++      expect(requests, 1);
++      final saved = jsonDecode(
++        (await oauth.storage.read(key: 'rewind.pkce.test'))!,
++      );
++      expect(saved['refresh'], 'saved-refresh');
++    },
++  );
++  test('Background polling never opens a login prompt', () async {
++    FlutterSecureStorage.setMockInitialValues({});
++    await expectLater(
++      SpotifyOAuth().token(
++        'test',
++        'frankensteinrewindpreview://auth',
++        interactive: false,
++      ),
++      throwsStateError,
++    );
++  });
++  test('Samba guest and password shares list and read audio bytes', () async {
++    FlutterSecureStorage.setMockInitialValues({});
++    final tmp = await Directory.systemTemp.createTemp('rewind-test-');
++    PathProviderPlatform.instance = TestPaths(tmp.path);
++    addTearDown(() => tmp.delete(recursive: true));
++    final net = NetworkLibrary();
++    addTearDown(() async => net.share?.close());
++    for (final user in ['', 'rewindtest']) {
++      await net.configure(
++        '127.0.0.1/' + (user.isEmpty ? 'public' : 'private'),
++        user,
++        user.isEmpty ? '' : 'test-only',
++      );
++      final tracks = await net.files('');
++      final song = tracks.singleWhere((e) => e.title == 'fixture.mp3');
++      expect(
++        await (await net.cacheTrack(song.id.substring(8))).readAsString(),
++        'fixture',
++      );
++    }
++  }, skip: Platform.environment['REWIND_SMB_FIXTURE'] != '1');
++}
 diff --git a/test/unit_tests/rewind/spotify_setup_test.dart b/test/unit_tests/rewind/spotify_setup_test.dart
 new file mode 100644
 index 0000000..885db7e
