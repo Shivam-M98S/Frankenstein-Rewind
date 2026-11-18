@@ -41,6 +41,7 @@ jobs:
           export CPATH="$(curl-config --prefix)/include:$(gcc -print-multiarch | sed 's|^|/usr/include/|'):${CPATH:-}"
           dart analyze --no-fatal-warnings lib/features/rewind lib/core/services/audio_player_service.dart lib/features/settings/screens test/unit_tests/rewind
           flutter test --no-pub --coverage --suppress-analytics test/unit_tests/rewind
+          unset CPATH
           flutter build apk --release --flavor production --build-name=0.2.3 --build-number=31 --target-platform android-arm,android-arm64,android-x64
           apk=$(find build/app/outputs -iname '*.apk' | head -1)
           test -s "$apk"
