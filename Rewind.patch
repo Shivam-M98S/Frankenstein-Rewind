@@ -29,7 +29,7 @@ index d9424f3..6bbbe76 100644
          }
      }
 diff --git a/android/app/src/main/AndroidManifest.xml b/android/app/src/main/AndroidManifest.xml
-index 0830593..5f10475 100644
+index 0830593..6110410 100644
 --- a/android/app/src/main/AndroidManifest.xml
 +++ b/android/app/src/main/AndroidManifest.xml
 @@ -4,12 +4,15 @@
@@ -48,26 +48,31 @@ index 0830593..5f10475 100644
  
      <application
          android:networkSecurityConfig="@xml/network_security_config"
-@@ -18,8 +21,17 @@
+@@ -18,8 +21,9 @@
          android:name="${applicationName}"
          android:icon="@mipmap/ic_launcher"
          android:enableOnBackInvokedCallback="true">
-+        <activity android:name="com.linusu.flutter_web_auth_2.CallbackActivity" android:taskAffinity=""
-+            android:exported="true">
-+            <intent-filter>
-+                <action android:name="android.intent.action.VIEW" />
-+                <category android:name="android.intent.category.DEFAULT" />
-+                <category android:name="android.intent.category.BROWSABLE" />
-+                <data android:scheme="frankensteinrewind" android:host="auth" />
-+            </intent-filter>
-+        </activity>
++
          <activity
 -            android:name="com.ryanheise.audioservice.AudioServiceActivity"
 +            android:name="com.adeeteya.classipod.MainActivity"
              android:exported="true"
              android:launchMode="singleTop"
              android:taskAffinity=""
-@@ -74,6 +86,7 @@
+@@ -27,6 +31,12 @@
+             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+             android:hardwareAccelerated="true"
+             android:windowSoftInputMode="adjustResize">
++            <intent-filter>
++                <action android:name="android.intent.action.VIEW" />
++                <category android:name="android.intent.category.DEFAULT" />
++                <category android:name="android.intent.category.BROWSABLE" />
++                <data android:scheme="frankensteinrewind" android:host="auth" />
++            </intent-filter>
+             <!-- Specifies an Android theme to apply to this Activity as soon as
+                  the Android process has started. This theme is visible to the user
+                  while the Flutter UI initializes. After that, this theme continues
+@@ -74,6 +84,7 @@
  
           In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
      <queries>
@@ -76,10 +81,10 @@ index 0830593..5f10475 100644
              <action android:name="android.intent.action.PROCESS_TEXT" />
              <data android:mimeType="text/plain" />
 diff --git a/android/app/src/main/kotlin/com/adeeteya/classipod/MainActivity.kt b/android/app/src/main/kotlin/com/adeeteya/classipod/MainActivity.kt
-index 67e9c63..3408b69 100644
+index 67e9c63..ddea13f 100644
 --- a/android/app/src/main/kotlin/com/adeeteya/classipod/MainActivity.kt
 +++ b/android/app/src/main/kotlin/com/adeeteya/classipod/MainActivity.kt
-@@ -1,5 +1,68 @@
+@@ -1,5 +1,92 @@
  package com.adeeteya.classipod
  
 -import io.flutter.embedding.android.FlutterActivity
@@ -94,6 +99,15 @@ index 67e9c63..3408b69 100644
  
 -class MainActivity : FlutterActivity()
 +class MainActivity : AudioServiceActivity() {
++    private var login: io.flutter.plugin.common.MethodChannel.Result? = null
++    override fun onNewIntent(intent: android.content.Intent) {
++        super.onNewIntent(intent)
++        val uri = intent.data ?: return
++        if (uri.host == "auth" && uri.scheme in listOf("frankensteinrewindpreview", "frankensteinrewind")) {
++            login?.success(uri.toString())
++            login = null
++        }
++    }
 +    private val lanPermission = "android.permission.ACCESS_LOCAL_NETWORK"
 +    private var permissionResult: io.flutter.plugin.common.MethodChannel.Result? = null
 +    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -114,6 +128,21 @@ index 67e9c63..3408b69 100644
 +            else {
 +                permissionResult = result
 +                requestPermissions(arrayOf(lanPermission), 4317)
++            }
++        }
++        io.flutter.plugin.common.MethodChannel(engine.dartExecutor.binaryMessenger, "rewind/auth").setMethodCallHandler { call, result ->
++            val uri = android.net.Uri.parse(call.arguments as? String ?: "")
++            if (call.method != "authorize" || uri.scheme != "https" || uri.host != "accounts.spotify.com") {
++                result.error("INVALID_REQUEST", "Invalid authorization URL", null)
++            } else {
++                login?.error("CANCELED", "Previous login closed", null)
++                login = result
++                try {
++                    startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri))
++                } catch (e: android.content.ActivityNotFoundException) {
++                    login = null
++                    result.error("NO_BROWSER", "Install a browser to sign in", null)
++                }
 +            }
 +        }
 +        val main = Handler(Looper.getMainLooper())
@@ -2817,16 +2846,16 @@ index 0000000..180460f
 +}
 diff --git a/lib/features/rewind/spotify_oauth.dart b/lib/features/rewind/spotify_oauth.dart
 new file mode 100644
-index 0000000..b96d3ba
+index 0000000..d13df16
 --- /dev/null
 +++ b/lib/features/rewind/spotify_oauth.dart
-@@ -0,0 +1,132 @@
+@@ -0,0 +1,129 @@
 +import 'dart:convert';
 +import 'dart:math';
 +
 +import 'package:crypto/crypto.dart';
 +import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-+import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
++import 'package:flutter/services.dart';
 +import 'package:http/http.dart' as http;
 +
 +String pkceChallenge(String verifier) => base64Url
@@ -2909,10 +2938,7 @@ index 0000000..b96d3ba
 +        'scope': 'user-library-read playlist-read-private playlist-read-collaborative user-read-playback-state user-modify-playback-state',
 +      });
 +      final reply = Uri.parse(
-+        await FlutterWebAuth2.authenticate(
-+          url: url.toString(),
-+          callbackUrlScheme: redirect.scheme,
-+        ),
++        (await const MethodChannel('rewind/auth').invokeMethod<String>('authorize', url.toString()).timeout(const Duration(minutes: 3)))!,
 +      );
 +      if (reply.scheme != redirect.scheme ||
 +          reply.authority != redirect.authority ||
@@ -3563,7 +3589,7 @@ index 9f9d188..71cebd7 100644
        supportedLocales: AppLocalizations.supportedLocales,
        showPerformanceOverlay: debuggerTools.showPerformanceOverlay,
 diff --git a/pubspec.yaml b/pubspec.yaml
-index 1c1a7ec..4fb784c 100644
+index 1c1a7ec..4c002c3 100644
 --- a/pubspec.yaml
 +++ b/pubspec.yaml
 @@ -3,7 +3,7 @@ description: "An iPod Classic-inspired player for local music and Subsonic/Navid
@@ -3579,7 +3605,7 @@ index 1c1a7ec..4fb784c 100644
    flutter_localizations:
      sdk: flutter
    flutter_riverpod: ^3.4.3
-+  flutter_web_auth_2: ^5.1.0
++
    flutter_secure_storage: ^11.2.0
    flutter_taglib:
      git:
