@@ -747,7 +747,7 @@ index c7f8c88..77d2ad7 100644
        ),
      );
 diff --git a/lib/features/menu/screens/main_menu_screen.dart b/lib/features/menu/screens/main_menu_screen.dart
-index f0dc83c..956a72c 100644
+index f0dc83c..d7cd8ce 100644
 --- a/lib/features/menu/screens/main_menu_screen.dart
 +++ b/lib/features/menu/screens/main_menu_screen.dart
 @@ -1,3 +1,6 @@
@@ -791,7 +791,7 @@ index f0dc83c..956a72c 100644
 +  List<Object> get displayItems {
 +    final items = <Object>[
 +      ..._MainMenuDisplayItems.values.where(
-+        (e) => e != _MainMenuDisplayItems.settings,
++        (e) => e != _MainMenuDisplayItems.settings && e != _MainMenuDisplayItems.server && e != _MainMenuDisplayItems.radio,
 +      ),
 +      ...rewindPins.value.keys,
 +    ];
@@ -1736,7 +1736,7 @@ index 0000000..8d50463
 +final rewindAppearance = ValueNotifier<int>(0);
 diff --git a/lib/features/rewind/rewind_screen.dart b/lib/features/rewind/rewind_screen.dart
 new file mode 100644
-index 0000000..364039d
+index 0000000..8b7aedb
 --- /dev/null
 +++ b/lib/features/rewind/rewind_screen.dart
 @@ -0,0 +1,841 @@
@@ -2425,7 +2425,7 @@ index 0000000..364039d
 +            Padding(
 +              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
 +              child: Text(
-+                section,
++                section == 'Experimental' ? 'Appearance' : section,
 +                style: const TextStyle(fontWeight: FontWeight.bold),
 +              ),
 +            ),
@@ -2955,10 +2955,10 @@ index 0000000..b96d3ba
 +}
 diff --git a/lib/features/rewind/spotify_session.dart b/lib/features/rewind/spotify_session.dart
 new file mode 100644
-index 0000000..a6efe4b
+index 0000000..8608b4d
 --- /dev/null
 +++ b/lib/features/rewind/spotify_session.dart
-@@ -0,0 +1,287 @@
+@@ -0,0 +1,297 @@
 +import 'dart:async';
 +import 'dart:convert';
 +
@@ -3006,6 +3006,7 @@ index 0000000..a6efe4b
 +
 +  final oauth = SpotifyOAuth();
 +  bool webPlayer = false;
++  bool localSelected = false;
 +  Timer? poll;
 +  bool polling = false;
 +  Future<String> token(String id, {bool renew = false}) =>
@@ -3026,16 +3027,15 @@ index 0000000..a6efe4b
 +        'Content-Type': 'application/json',
 +      };
 +      final payload = body == null ? null : jsonEncode(body);
-+      return switch (method) {
++      return (switch (method) {
 +        'GET' => http.get(uri, headers: headers),
 +        'POST' => http.post(uri, headers: headers, body: payload),
 +        _ => http.put(uri, headers: headers, body: payload),
-+      };
++      }).timeout(const Duration(seconds: 18));
 +    }
 +
-+    var res = await send(false).timeout(const Duration(seconds: 18));
-+    if (res.statusCode == 401)
-+      res = await send(true).timeout(const Duration(seconds: 18));
++    var res = await send(false);
++    if (res.statusCode == 401) res = await send(true);
 +    if (res.statusCode == 404)
 +      throw StateError(
 +        'Start a song in Spotify on this phone or another Spotify Connect device, then retry.',
@@ -3082,7 +3082,7 @@ index 0000000..a6efe4b
 +      duration = item?['duration_ms'] as int? ?? 0;
 +      paused = state?['is_playing'] != true;
 +      sampled = DateTime.now();
-+      if (!paused && uri.isNotEmpty) active = true;
++      if (!localSelected && !paused && uri.isNotEmpty) active = true;
 +      if (uri.isEmpty) active = false;
 +      notifyListeners();
 +    } finally {
@@ -3152,6 +3152,7 @@ index 0000000..a6efe4b
 +  }
 +
 +  Future<void> connect(String id) async {
++    localSelected = false;
 +    if (connected && webPlayer) return;
 +    if (connected) {
 +      try {
@@ -3168,8 +3169,10 @@ index 0000000..a6efe4b
 +      connected = await SpotifySdk.connectToSpotifyRemote(
 +        clientId: id,
 +        redirectUrl: redirect,
-+      );
++      ).timeout(const Duration(seconds: 20));
 +    } on PlatformException {
++      connected = false;
++    } on TimeoutException {
 +      connected = false;
 +    }
 +    if (!connected) {
@@ -3208,7 +3211,7 @@ index 0000000..a6efe4b
 +        duration = song?.duration ?? 0;
 +        sampled = DateTime.now();
 +        paused = state.isPaused;
-+        if (!paused && uri.isNotEmpty) active = true;
++        if (!localSelected && !paused && uri.isNotEmpty) active = true;
 +        notifyListeners();
 +      },
 +      onError: (Object _) {
@@ -3223,6 +3226,7 @@ index 0000000..a6efe4b
 +  }
 +
 +  void selectLocal() {
++    localSelected = true;
 +    if (active) {
 +      active = false;
 +      notifyListeners();
@@ -3232,7 +3236,13 @@ index 0000000..a6efe4b
 +  Future<void> reset(String old) async {
 +    await subscription?.cancel();
 +    poll?.cancel();
-+    if (connected && !webPlayer) await SpotifySdk.disconnect();
++    if (connected && !webPlayer) {
++      try {
++        await SpotifySdk.disconnect();
++      } on PlatformException {
++        /* Already disconnected. */
++      }
++    }
 +    webPlayer = false;
 +    await oauth.forget(old);
 +    await storage.delete(key: 'rewind.spotify.$old');
@@ -3320,7 +3330,7 @@ index f0cdc83..39b5e61 100644
                ],
              ),
 diff --git a/lib/features/settings/screens/library_settings_screen.dart b/lib/features/settings/screens/library_settings_screen.dart
-index 1c59ee0..68aac84 100644
+index 1c59ee0..2515dec 100644
 --- a/lib/features/settings/screens/library_settings_screen.dart
 +++ b/lib/features/settings/screens/library_settings_screen.dart
 @@ -1,4 +1,7 @@
@@ -3372,6 +3382,15 @@ index 1c59ee0..68aac84 100644
      subsonic || configureSubsonic => SplitScreenType.subsonic,
      hideLocalMusic => SplitScreenType.hideLocalMusic,
      preventDuplicateTracks => SplitScreenType.preventDuplicateTracks,
+@@ -61,7 +82,7 @@ class _LibrarySettingsScreenState extends ConsumerState<LibrarySettingsScreen>
+     with CustomScreen {
+   bool _handlingSetting = false;
+   List<_LibrarySettingsItems> _displayItems = [
+-    for (final item in _LibrarySettingsItems.values)
++    for (final item in const [_LibrarySettingsItems.spotifySetup, _LibrarySettingsItems.refreshLibrary, _LibrarySettingsItems.artwork, _LibrarySettingsItems.albumSort, _LibrarySettingsItems.songSort, _LibrarySettingsItems.excludeDirectories])
+       if (item != _LibrarySettingsItems.configureSubsonic &&
+           item != _LibrarySettingsItems.hideLocalMusic &&
+           item != _LibrarySettingsItems.missingTracks)
 @@ -83,6 +104,44 @@ class _LibrarySettingsScreenState extends ConsumerState<LibrarySettingsScreen>
      try {
        setState(() => selectedDisplayItem = displayItems.indexOf(item));
@@ -3417,8 +3436,17 @@ index 1c59ee0..68aac84 100644
          case _LibrarySettingsItems.subsonic:
            final controller = ref.read(subsonicControllerProvider.notifier);
            final enabled =
+@@ -163,7 +222,7 @@ class _LibrarySettingsScreenState extends ConsumerState<LibrarySettingsScreen>
+     final missingTracks = ref.watch(missingTracksProvider);
+     final selectedItem = displayItems[selectedDisplayItem];
+     _displayItems = [
+-      for (final item in _LibrarySettingsItems.values)
++      for (final item in const [_LibrarySettingsItems.spotifySetup, _LibrarySettingsItems.refreshLibrary, _LibrarySettingsItems.artwork, _LibrarySettingsItems.albumSort, _LibrarySettingsItems.songSort, _LibrarySettingsItems.excludeDirectories])
+         if (((item != _LibrarySettingsItems.configureSubsonic &&
+                     item != _LibrarySettingsItems.hideLocalMusic) ||
+                 remote?.enabled == true) &&
 diff --git a/lib/features/settings/screens/settings_preferences_screen.dart b/lib/features/settings/screens/settings_preferences_screen.dart
-index d0aee6e..e4708e8 100644
+index d0aee6e..94504c0 100644
 --- a/lib/features/settings/screens/settings_preferences_screen.dart
 +++ b/lib/features/settings/screens/settings_preferences_screen.dart
 @@ -1,4 +1,3 @@
@@ -3450,7 +3478,7 @@ index d0aee6e..e4708e8 100644
 -      case donate:
 -        return context.localization.donateSettingTitle;
 +      case experimental:
-+        return 'Experimental';
++        return 'Appearance';
      }
    }
  }
@@ -3535,7 +3563,7 @@ index 9f9d188..71cebd7 100644
        supportedLocales: AppLocalizations.supportedLocales,
        showPerformanceOverlay: debuggerTools.showPerformanceOverlay,
 diff --git a/pubspec.yaml b/pubspec.yaml
-index 1c1a7ec..64a34de 100644
+index 1c1a7ec..4fb784c 100644
 --- a/pubspec.yaml
 +++ b/pubspec.yaml
 @@ -3,7 +3,7 @@ description: "An iPod Classic-inspired player for local music and Subsonic/Navid
@@ -3571,6 +3599,65 @@ index 1c1a7ec..64a34de 100644
    vibration: ^3.2.1
    vibration_web: ^1.6.8
    volume_controller: ^3.7.1
+@@ -66,6 +69,7 @@ dev_dependencies:
+   hive_ce_generator: ^1.11.3
+   riverpod_lint: ^3.1.9
+   shared_preferences_platform_interface: ^2.4.2
++  path_provider_platform_interface: ^2.1.3
+ 
+ flutter:
+   generate: true
+diff --git a/test/unit_tests/core/services/library_audio_handler_test.dart b/test/unit_tests/core/services/library_audio_handler_test.dart
+index faa294d..60144bf 100644
+--- a/test/unit_tests/core/services/library_audio_handler_test.dart
++++ b/test/unit_tests/core/services/library_audio_handler_test.dart
+@@ -5,6 +5,7 @@ import 'dart:math';
+ 
+ import 'package:audio_service/audio_service.dart';
+ import 'package:classipod/core/models/music_metadata.dart';
++import 'package:classipod/features/rewind/network_library.dart';
+ import 'package:classipod/core/models/playback_shuffle_mode.dart';
+ import 'package:classipod/core/providers/filtered_audio_files_provider.dart';
+ import 'package:classipod/core/services/audio_files_service.dart';
+@@ -25,6 +26,7 @@ class TestPlayer extends Fake implements AudioPlayer {
+   final errors = StreamController<PlayerException>.broadcast();
+   final positions = StreamController<Duration>.broadcast();
+   final loadedIds = <String>[];
++  final loadedUris = <Uri>[];
+   bool failLoad = false;
+   PlayerException? loadError;
+   Completer<void>? blockedSeek;
+@@ -63,6 +65,7 @@ class TestPlayer extends Fake implements AudioPlayer {
+     if (failLoad) throw StateError('unreadable track');
+     sourceCount = 1;
+     loadedIds.add(((source as UriAudioSource).tag as MediaItem).id);
++    loadedUris.add(source.uri);
+     position = initialPosition ?? Duration.zero;
+     processingState = ProcessingState.ready;
+     states.add(processingState);
+@@ -154,6 +157,22 @@ void main() {
+     await player.close();
+   });
+ 
++  test(
++    'Radio selection passes its HTTPS stream to the player and starts it',
++    () async {
++      final station = NetworkLibrary.suriname.first;
++      await handler.setSongs([
++        NetworkLibrary().item(station, 0),
++      ], preload: false);
++      expect(player.loadedUris, isEmpty);
++      await handler.select(0);
++      await flushEvents();
++      expect(player.loadedUris, [Uri.parse(station.id)]);
++      expect(player.playing, isTrue);
++      expect(handler.mediaItem.value?.title, station.title);
++    },
++  );
++
+   test(
+     'startup restores Now Playing and persists subsequent controls',
+     () async {
 diff --git a/test/unit_tests/rewind/network_sources_test.dart b/test/unit_tests/rewind/network_sources_test.dart
 new file mode 100644
 index 0000000..b15a4a6
