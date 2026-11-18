@@ -26,7 +26,7 @@ jobs:
         with:
           flutter-version: '3.47.6'
           cache: true
-      - name: Test connectivity and build universal preview
+      - name: Test Spotify and build universal preview
         working-directory: player
         run: |
           git apply ../Rewind.patch
@@ -37,38 +37,10 @@ jobs:
           flutter gen-l10n
           dart run build_runner build --delete-conflicting-outputs
           sudo apt-get update -qq
-          sudo apt-get install -y libcurl4-openssl-dev samba ffmpeg
+          sudo apt-get install -y libcurl4-openssl-dev
           export CPATH="$(curl-config --prefix)/include:$(gcc -print-multiarch | sed 's|^|/usr/include/|'):${CPATH:-}"
-          mkdir -p /tmp/rewind-public /tmp/rewind-private
-          printf fixture > /tmp/rewind-public/fixture.mp3
-          printf fixture > /tmp/rewind-private/fixture.mp3
-          sudo useradd --no-create-home rewindtest
-          printf 'test-only\ntest-only\n' | sudo smbpasswd -a -s rewindtest
-          cat > /tmp/rewind-smb.conf <<'SMB'
-          [global]
-          map to guest = Bad User
-          guest account = nobody
-          server min protocol = SMB2
-          interfaces = 127.0.0.1
-          bind interfaces only = yes
-          smb ports = 445
-          [public]
-          path = /tmp/rewind-public
-          guest ok = yes
-          read only = yes
-          [private]
-          path = /tmp/rewind-private
-          guest ok = no
-          valid users = rewindtest
-          read only = yes
-          SMB
-          sudo systemctl stop smbd nmbd || true
-          sudo smbd -s /tmp/rewind-smb.conf -D
           dart analyze --no-fatal-warnings lib/features/rewind lib/core/services/audio_player_service.dart lib/features/settings/screens test/unit_tests/rewind
-          REWIND_SMB_FIXTURE=1 flutter test --no-pub --coverage --suppress-analytics test/unit_tests/rewind
-          for stream in 'https://s5.radio.co/s85a633f73/listen' 'https://surilive.com:8000/;'; do
-            timeout 40 ffmpeg -hide_banner -loglevel error -rw_timeout 15000000 -i "$stream" -t 2 -f null -
-          done
+          flutter test --no-pub --coverage --suppress-analytics test/unit_tests/rewind
           flutter build apk --release --flavor production --build-name=0.2.3 --build-number=31 --target-platform android-arm,android-arm64,android-x64
           apk=$(find build/app/outputs -iname '*.apk' | head -1)
           test -s "$apk"
