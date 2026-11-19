@@ -1,0 +1,34 @@
+name: Publish signed Spotify preview
+on:
+  push:
+    branches: [fix/playback-connectivity]
+    paths: ['.github/workflows/publish-023-preview.yml']
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: rewind-connectivity-signing-input
+          run-id: 44219314956
+          github-token: ${{ github.token }}
+          path: input
+      - name: Reassemble and verify locally signed APK
+        run: |
+          apk=Frankenstein-Rewind-0.2.3-beta.1.apk
+          head -c 81854684 input/rewind-unsigned.apk > "$apk"
+          base64 -d release/0.2.3-beta.1.apk-tail.gz.b64 | gzip -dc >> "$apk"
+          echo "a24053a4b20b9429854c98a7410c4be8e8d37644d98912f42b4e02bde9f30121  $apk" | sha256sum -c -
+          signer=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)
+          "$signer" verify --verbose "$apk"
+      - name: Publish prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v0.2.3-beta.1 Frankenstein-Rewind-0.2.3-beta.1.apk --target fd101cb12469ee330968beedfc62a342007f131b --prerelease --title "Frankenstein Rewind 0.2.3 beta 1" --notes-file docs/releases/0.2.3-beta.1.md
