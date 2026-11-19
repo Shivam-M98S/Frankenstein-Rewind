@@ -1,5 +1,12 @@
 # Frankenstein Rewind
 
+**[Download Frankenstein Rewind 0.2.3 beta 1 for Android](https://github.com/Shivam-M98S/Frankenstein-Rewind/releases/download/v0.2.3-beta.1/Frankenstein-Rewind-0.2.3-beta.1.apk)** · [Changelog and installation steps](https://github.com/Shivam-M98S/Frankenstein-Rewind/releases/tag/v0.2.3-beta.1) · [Preview source](https://github.com/Shivam-M98S/Frankenstein-Rewind/tree/fd101cb12469ee330968beedfc62a342007f131b)
+
+This free click-wheel player brings Spotify playlists, Liked Songs, local music, and Now Playing into one interface. Install the signed APK over Rewind Preview 0.2.2, then open **Settings → Library → Spotify setup**. Radio and home-server menus are deferred in this preview.
+
+<details>
+<summary>Earlier alpha downloads, features, and build instructions</summary>
+
 Frankenstein Rewind is a free click-wheel music player for Android by **Shivam-M98S**. Spin through albums on your phone, pin a Spotify playlist to Home, or tune into a live station from Suriname. Use **Now Playing** on the main menu to get back to the track.
 
 **[Download the Android APK · 0.2.0 alpha 1 · 200 MB](https://github.com/Shivam-M98S/Frankenstein-Rewind/releases/download/v0.2.0-alpha.1/Frankenstein-Rewind-0.2.0-alpha.1.apk)** · [Read the changelog](https://github.com/Shivam-M98S/Frankenstein-Rewind/releases/tag/v0.2.0-alpha.1)
@@ -79,3 +86,5 @@ For a self-built APK, register your own signing certificate fingerprint with Spo
 ## Credits
 
 Frankenstein Rewind builds on ClassiPod. This product includes software developed by Aditya R. [Upstream project](https://github.com/adeeteya/Classipod) · [License](LICENSE)
+
+</details>
